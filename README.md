@@ -451,46 +451,58 @@ You can also perform the installation steps individually:
 
 Once the container is running, you can connect to it using any MCP client implementation. The server will be available at `http://localhost:8000` or the port specified in your configuration.
 
+**Important:** When configuring your MCP client, you must set the endpoint URL to `http://127.0.0.1:<port>/sse` (where `<port>` is 8000 by default or the port you've configured). The `/sse` path is required for proper server-sent events communication.
+
 ### Example Python Client
 
 ```python
-from mcp.client import MCPClient
+from mcp.client.sse import sse_client
+from mcp import ClientSession
+import asyncio
 
 async def main():
     # Connect to the Container-MCP server
-    client = await MCPClient.connect("http://localhost:8000")
+    # Note the /sse endpoint suffix required for SSE communication
+    sse_url = "http://127.0.0.1:8000/sse"  # Or your configured port
     
-    # Discover available tools
-    tools = await client.get_tools()
-    print(f"Available tools: {[t.name for t in tools]}")
-    
-    # Execute a Python script
-    result = await client.execute_tool("system_run_python", {
-        "code": "print('Hello, world!')\nresult = 42\n_ = result"
-    })
-    print(f"Python result: {result}")
-    
-    # Execute a bash command
-    result = await client.execute_tool("system_run_command", {
-        "command": "ls -la"
-    })
-    print(f"Command output: {result['stdout']}")
+    # Connect to the SSE endpoint
+    async with sse_client(sse_url) as (read, write):
+        async with ClientSession(read, write) as session:
+            # Initialize the connection
+            await session.initialize()
+            
+            # Discover available tools
+            result = await session.list_tools()
+            print(f"Available tools: {[tool.name for tool in result.tools]}")
+            
+            # Execute a Python script
+            python_result = await session.execute_tool(
+                "system_run_python",
+                {"code": "print('Hello, world!')\nresult = 42\n_ = result"}
+            )
+            print(f"Python result: {python_result}")
+            
+            # Execute a bash command
+            bash_result = await session.execute_tool(
+                "system_run_command",
+                {"command": "ls -la"}
+            )
+            print(f"Command output: {bash_result['stdout']}")
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
 ```
 
 ## Configuration
 
-Container-MCP can be configured through environment variables, which can be set in `config/custom.env`:
+Container-MCP can be configured through environment variables, which can be set in `volume/config/custom.env`:
 
 ### Server Configuration
 
 ```
 # MCP Server Configuration
 MCP_HOST=127.0.0.1
-MCP_PORT=9000
+MCP_PORT=9001
 DEBUG=true
 LOG_LEVEL=INFO
 ```
