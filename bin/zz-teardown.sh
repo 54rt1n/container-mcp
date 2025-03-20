@@ -91,6 +91,10 @@ if [[ $clean_data == "y" || $clean_data == "Y" ]]; then
     rm -rf logs/* 2>/dev/null || true
     rm -rf temp/* 2>/dev/null || true
     rm -rf data/* 2>/dev/null || true
+    rm -rf volume/sandbox/* 2>/dev/null || true
+    rm -rf volume/logs/* 2>/dev/null || true
+    rm -rf volume/temp/* 2>/dev/null || true
+    rm -rf volume/data/* 2>/dev/null || true
     echo "Data directories cleaned."
 fi
 

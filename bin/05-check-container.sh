@@ -48,7 +48,7 @@ if [ -n "$CONTAINER_RUNNING" ]; then
     else
         # Try to get port from config
         if [ -f "volume/config/custom.env" ]; then
-            MCP_PORT=$(grep "MCP_PORT" volume/config/custom.env | cut -d'=' -f2)
+            MCP_PORT=$(grep "^MCP_PORT=" volume/config/custom.env | cut -d'=' -f2)
             echo "Container should be accessible at: http://localhost:${MCP_PORT}"
         else
             echo "Port information not available."

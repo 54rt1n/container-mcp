@@ -60,6 +60,16 @@ if [ ! -f "volume/config/custom.env" ] && [ -f "volume/config/default.env" ]; th
     echo "You can modify the custom configuration in volume/config/custom.env"
 fi
 
+# Ensure port comments are correct in custom.env
+if [ -f "volume/config/custom.env" ]; then
+    # Check if port comment exists, add if not
+    if ! grep -q "Note: The port value below defines the external port mapping" volume/config/custom.env; then
+        # Create temporary file with updated content
+        sed -i '2i# Note: The port value below defines the external port mapping.\n# Inside the container, the application always listens on port 8000.' volume/config/custom.env
+        echo "Updated port configuration comments in custom.env"
+    fi
+fi
+
 # Set up container-compose file if using Docker
 if [ "${CONTAINER_CMD}" = "docker" ] && [ -f "podman-compose.yml" ]; then
     echo "Creating docker-compose.yml from podman-compose.yml..."

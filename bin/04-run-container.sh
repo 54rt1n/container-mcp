@@ -80,7 +80,7 @@ if [ "${RUN_CONTAINER}" = "true" ]; then
     fi
     
     # Get MCP port from env file
-    MCP_PORT=$(grep "MCP_PORT" ${ENV_FILE} | cut -d'=' -f2)
+    MCP_PORT=$(grep "^MCP_PORT=" ${ENV_FILE} | cut -d'=' -f2)
     MCP_PORT=${MCP_PORT:-8000}  # Default to 8000 if not found
     
     echo "Starting container on port ${MCP_PORT}..."
@@ -125,4 +125,5 @@ else
 fi
 
 echo "=== Container Run Complete ==="
-echo "To run tests against the container, execute: bin/05-run-tests.sh" 
+echo "To check the container status, run: bin/05-check-container.sh" 
+echo "To run tests against the container, execute: bin/06-run-tests.sh" 
