@@ -1,0 +1,79 @@
+[tool.ruff]
+# Enable Pyflakes ('F'), pycodestyle ('E'), and import sorting ('I')
+select = ["E", "F", "I", "N", "B", "A", "C4", "UP", "D", "RUF"]
+ignore = []
+
+# Same as Black.
+line-length = 88
+indent-width = 4
+
+# Assume Python 3.12
+target-version = "py312"
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]  # Unused imports
+"tests/**/*.py" = ["D"]   # Disable docstring checks in tests
+
+[tool.ruff.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.isort]
+known-first-party = ["cmcp"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[build-system]
+requires = ["setuptools>=42", "wheel", "setuptools_scm>=6.2"]
+build-backend = "setuptools.build_meta"
+
+# Specify packages to include
+[tool.setuptools.packages.find]
+include = ["cmcp*"]
+exclude = ["tests*"]
+
+[project]
+name = "container-mcp"
+description = "Container-based MCP implementation for secure tool execution"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+    { name = "54rt1n", email = "opensource@bmds.us" }
+]
+dynamic = ["version"]
+dependencies = [
+    # MCP SDK
+    "mcp[cli]>=1.0.0",
+    
+    # Async utilities
+    "aiofiles>=0.8.0",
+    "asyncio>=3.4.3",
+    
+    # Web capabilities
+    "playwright>=1.31.0",
+    "beautifulsoup4>=4.11.1",
+    "requests>=2.28.1",
+    
+    # Data handling
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    # Testing
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.18.3",
+    "pytest-cov>=3.0.0",
+    
+    # Linting and formatting
+    "ruff>=0.0.245",
+    "black>=23.0.0",
+    
+    # Debugging
+    "ipython>=8.10.0",
+    "pdbpp>=0.10.3",
+] 

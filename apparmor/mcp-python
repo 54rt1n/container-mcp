@@ -1,0 +1,43 @@
+#include <tunables/global>
+
+profile mcp-python {
+  #include <abstractions/base>
+  #include <abstractions/python>
+
+  # Python interpreter access
+  /usr/bin/python3.12 mr,
+  /app/.venv/bin/python3.12 mr,
+  /app/.venv/bin/python mr,
+  
+  # Python libraries
+  /usr/lib/python3.12/** r,
+  /app/.venv/lib/python3.12/** r,
+  
+  # Sandbox directory access
+  /app/sandbox/python/** rw,
+  /app/data/** r,
+  
+  # Temporary directory access
+  /app/temp/** rw,
+  /tmp/** rw,
+  
+  # Allow Python to read its necessary files
+  /etc/passwd r,
+  /etc/group r,
+  
+  # Deny network access
+  deny network inet,
+  deny network inet6,
+  
+  # Deny access to sensitive directories 
+  deny @{HOME}/** rwx,
+  deny /mnt/** rwx,
+  deny /media/** rwx,
+  deny /run/** rwx,
+  deny /proc/** rwx,
+  deny /sys/** rwx,
+  deny /dev/** rwx,
+  deny /var/** rwx,
+  deny /etc/shadow rwx,
+  deny /root/** rwx,
+} 

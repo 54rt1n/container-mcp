@@ -1,0 +1,54 @@
+__pycache__
+.venv
+.pytest_cache
+.ruff_cache
+.mypy_cache
+logs
+sandbox
+temp
+data
+*.egg-info
+uv.lock
+local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project specific
+volume/
+*.log
+.coverage
+htmlcov/
+.pytest_cache/

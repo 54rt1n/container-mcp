@@ -1,0 +1,29 @@
+version: '3'
+
+services:
+  container-mcp:
+    image: container-mcp:latest
+    container_name: container-mcp
+    ports:
+      - "127.0.0.1:${MCP_PORT:-9000}:8000"
+    volumes:
+      - ./config:/app/config:ro
+      - ./data:/app/data:rw
+      - ./logs:/app/logs:rw
+      - ./sandbox:/app/sandbox:rw
+      - ./temp:/app/temp:rw
+    env_file:
+      - ${CUSTOM_ENV_FILE:-config/custom.env}
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    cap_add:
+      - SYS_ADMIN
+    restart: unless-stopped
+    networks:
+      - container-mcp-network
+
+networks:
+  container-mcp-network:
+    name: container-mcp-network
+    external: true 

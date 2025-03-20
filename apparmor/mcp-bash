@@ -1,0 +1,58 @@
+#include <tunables/global>
+
+profile mcp-bash {
+  #include <abstractions/base>
+  #include <abstractions/bash>
+
+  # Basic permissions
+  /bin/bash mr,
+  /usr/bin/bash mr,
+  /bin/dash mr,
+  /usr/bin/dash mr,
+  
+  # Basic commands we allow
+  /bin/ls mr,
+  /usr/bin/ls mr,
+  /bin/cat mr,
+  /usr/bin/cat mr,
+  /bin/grep mr,
+  /usr/bin/grep mr,
+  /bin/echo mr,
+  /usr/bin/echo mr,
+  /bin/mkdir mr,
+  /usr/bin/mkdir mr,
+  /bin/touch mr,
+  /usr/bin/touch mr,
+  /bin/pwd mr,
+  /usr/bin/pwd mr,
+  /bin/find mr,
+  /usr/bin/find mr,
+  
+  # Sandbox directory access
+  /app/sandbox/bash/** rw,
+  /app/data/** r,
+  
+  # Temporary directory access
+  /app/temp/** rw,
+  /tmp/** rw,
+  
+  # Common files
+  /etc/passwd r,
+  /etc/group r,
+  
+  # Deny network access
+  deny network inet,
+  deny network inet6,
+  
+  # Deny file system outside specific directories
+  deny @{HOME}/** rwx,
+  deny /mnt/** rwx,
+  deny /media/** rwx,
+  deny /run/** rwx,
+  deny /proc/** rwx,
+  deny /sys/** rwx,
+  deny /dev/** rwx,
+  deny /var/** rwx,
+  deny /etc/shadow rwx,
+  deny /root/** rwx,
+} 
