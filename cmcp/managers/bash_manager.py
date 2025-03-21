@@ -122,6 +122,32 @@ class BashManager:
         else:
             logger.debug(f"Command restrictions disabled, allowing command: {base_cmd}")
         
+        # Use direct subprocess with shell=True when restrictions are off for proper wildcard expansion
+        if not self.command_restricted:
+            logger.debug(f"Using direct subprocess execution with shell=True for command: {command}")
+            try:
+                # Use synchronous subprocess for simplicity with shell=True
+                process = subprocess.run(
+                    command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout
+                )
+                return BashResult(
+                    stdout=process.stdout,
+                    stderr=process.stderr,
+                    exit_code=process.returncode
+                )
+            except subprocess.TimeoutExpired:
+                logger.warning(f"Command execution timed out after {timeout} seconds")
+                return BashResult(
+                    stdout="",
+                    stderr=f"Command execution timed out after {timeout} seconds",
+                    exit_code=124
+                )
+        
+        # For restricted mode, use the sandboxed environment (original implementation)
         # Use environment-aware sandbox command
         sandbox_cmd = self._get_sandbox_command(command)
         logger.debug(f"Executing command: {command}")

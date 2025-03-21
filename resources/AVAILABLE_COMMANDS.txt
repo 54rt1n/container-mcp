@@ -1,0 +1,126 @@
+==============================================================================
+       ##   #     #    #    ### #        #    ######  #     #####  
+      #  #  #     #   # #    #  #       # #   #     # #     #      
+     #    # #     #  #   #   #  #      #   #  #     # #     #      
+     ###### #     # #     #  #  #     #     # ######  #     #####  
+     #    #  #   #  #######  #  #     ####### #     # #     #      
+     #    #   # #   #     #  #  #     #     # #     # #     #      
+     #    #    #    #     # ### ##### #     # ######  ##### #####  
+==============================================================================
+                      CONTAINER-MCP AVAILABLE COMMANDS v1.0
+==============================================================================
+
+This document lists all available commands in the Container-MCP environment.
+Feel free to use any of these tools in your sandbox environment.
+
+--[ FILE AND TEXT PROCESSING ]----------------------------------------------
+
+  bat         - Better alternative to cat with syntax highlighting
+  jq          - JSON processor
+  yq          - YAML processor
+  pandoc      - Universal document converter
+  grep        - Search text using patterns
+  ripgrep     - Faster alternative to grep
+  ag          - The Silver Searcher, another fast grep alternative
+  awk         - Pattern scanning and text processing
+  sed         - Stream editor for filtering and transforming text
+  tr          - Translate or delete characters
+  vim         - Improved vi text editor
+  nano        - Simple text editor
+  neovim      - Modern vim fork with enhanced features
+  less        - Text file viewer
+  cat         - Concatenate and display files
+  head        - Output the first part of files
+  tail        - Output the last part of files
+  wc          - Count lines, words, and characters
+  sort        - Sort lines of text files
+  uniq        - Report or filter out repeated lines
+  cut         - Remove sections from lines
+  paste       - Merge lines of files
+  join        - Join lines of two files on a common field
+  comm        - Compare two sorted files line by line
+
+--[ FILE MANAGEMENT ]------------------------------------------------------
+
+  ls          - List directory contents
+  tree        - Display directory tree structure
+  find        - Search for files
+  fd          - Simple, fast alternative to find
+  ncdu        - Disk usage analyzer with ncurses interface
+  tar         - Archive utility
+  zip/unzip   - Zip archive utility
+  gzip/gunzip - Compress or expand files
+  bzip2/bunzip2 - Higher compression than gzip
+  xz          - Highest compression
+  zstd        - Fast compression
+  cpio        - Copy files to and from archives
+  rsync       - Remote file copy and synchronization
+  scp         - Secure copy
+  ranger      - File manager with vim-like keybindings
+
+--[ SYSTEM TOOLS ]--------------------------------------------------------
+
+  ps          - Report process status
+  top         - Display processes
+  htop        - Interactive process viewer
+  glances     - System monitoring tool
+  iotop       - I/O usage monitor
+  strace      - Trace system calls and signals
+  ltrace      - Library call tracer
+  lsof        - List open files
+  pv          - Monitor progress of data through a pipe
+  watch       - Execute a program periodically, showing output
+  tmux        - Terminal multiplexer
+  byobu       - Text-based window manager and terminal multiplexer
+  fzf         - Command-line fuzzy finder
+  parallel    - Execute commands in parallel
+  neofetch    - System information tool with ASCII art logo
+  sysstat     - Performance monitoring tools
+
+--[ NETWORK TOOLS ]-------------------------------------------------------
+
+  wget        - Download files from the web
+  curl        - Transfer data from or to a server
+  nmap        - Network exploration and security scanning
+  ssh         - OpenSSH client
+  ping        - Send ICMP ECHO_REQUEST to network hosts
+  traceroute  - Print the route packets take to a network host
+  mtr         - Network diagnostic tool combining ping and traceroute
+  dig         - DNS lookup utility
+  host        - DNS lookup utility
+  whois       - Client for the whois directory service
+  netstat     - Network statistics
+  ss          - Another utility to investigate sockets
+  iperf3      - Network performance measurement tool
+  nc          - Netcat, the TCP/IP swiss army knife
+  socat       - Multipurpose relay
+  httpie      - User-friendly HTTP client
+
+--[ MULTIMEDIA ]----------------------------------------------------------
+
+  ffmpeg      - Record, convert, and stream audio and video
+  imagemagick - Image manipulation
+  tesseract   - OCR (Optical Character Recognition)
+
+--[ PROGRAMMING AND DEVELOPMENT ]-----------------------------------------
+
+  python3     - Python programming language interpreter
+  gcc         - GNU C and C++ compiler
+  make        - GNU make utility
+  git         - Distributed version control system
+  nodejs      - JavaScript runtime
+  npm         - Node package manager
+  go          - Go programming language compiler
+  sqlite3     - SQLite database
+
+--[ TEXT ANALYSIS AND LANGUAGE TOOLS ]------------------------------------
+
+  aspell      - Interactive spell checker
+  hunspell    - Spell checker
+  wordnet     - Lexical database for English
+  trans       - Translate Shell for language translation
+  figlet      - Create ASCII text banners
+
+==============================================================================
+         HAPPY COMPUTING! - USE THESE TOOLS WISELY AND EFFICIENTLY!
+============================================================================== 

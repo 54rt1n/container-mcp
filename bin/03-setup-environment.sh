@@ -25,6 +25,12 @@ echo "Setting up directories for container volumes..."
 mkdir -p volume/{data,logs,config,sandbox,temp}
 mkdir -p volume/sandbox/{bash,python,files,browser}
 
+# Copy the available commands list to sandbox
+if [ -f "resources/AVAILABLE_COMMANDS.txt" ]; then
+    echo "Copying available commands list to sandbox..."
+    cp resources/AVAILABLE_COMMANDS.txt volume/sandbox/
+fi
+
 # Ensure permissions are set correctly
 # All directories under volume need to be writable by the container
 chmod -R 777 volume

@@ -77,6 +77,8 @@ setup_logging(config.log_level, log_file)
 @mcp.tool()
 async def system_run_command(command: str, working_dir: Optional[str] = None) -> Dict[str, Any]:
     """Execute a bash command safely in a sandboxed environment.
+
+    See AVAILABLE_COMMANDS.txt for the extensive list of allowed commands.
     
     Args:
         command: The bash command to execute
