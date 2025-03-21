@@ -12,20 +12,19 @@ import logging
 # Load environment file directly
 def load_env_file():
     """Load environment variables from .env file."""
-    env_file = Path("config/custom.env")
+    env_file = Path("config/app.env")
     if not env_file.exists():
-        env_file = Path("config/default.env")
+        raise FileNotFoundError(f"Environment file {env_file} not found")
     
-    if env_file.exists():
-        print(f"Loading environment from {env_file}")
-        with open(env_file, "r") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if "=" in line:
-                    key, value = line.split("=", 1)
-                    os.environ[key] = value
+    print(f"Loading environment from {env_file}")
+    with open(env_file, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                key, value = line.split("=", 1)
+                os.environ[key] = value
 
 # Load environment variables BEFORE importing any other modules
 load_env_file()
@@ -43,10 +42,6 @@ if not (os.path.exists('/.dockerenv') or os.path.exists('/run/.containerenv')):
     # Create those directories if they don't exist
     os.makedirs(os.environ["SANDBOX_ROOT"], exist_ok=True)
     os.makedirs(os.environ["TEMP_DIR"], exist_ok=True)
-    os.makedirs(os.path.join(os.environ["SANDBOX_ROOT"], "bash"), exist_ok=True) 
-    os.makedirs(os.path.join(os.environ["SANDBOX_ROOT"], "python"), exist_ok=True)
-    os.makedirs(os.path.join(os.environ["SANDBOX_ROOT"], "files"), exist_ok=True)
-    os.makedirs(os.path.join(os.environ["SANDBOX_ROOT"], "browser"), exist_ok=True)
 
 import asyncio
 from typing import Dict, Any, Optional
@@ -168,18 +163,19 @@ async def file_write(path: str, content: str, encoding: str = "utf-8") -> Dict[s
         }
 
 @mcp.tool()
-async def file_list(path: str = "/", pattern: Optional[str] = None) -> Dict[str, Any]:
+async def file_list(path: str = "/", pattern: Optional[str] = None, recursive: bool = True) -> Dict[str, Any]:
     """List contents of a directory safely.
     
     Args:
         path: Path to the directory (relative to sandbox root)
         pattern: Optional glob pattern to filter files
+        recursive: Whether to list files recursively (default: True)
         
     Returns:
         Dictionary containing directory entries
     """
     try:
-        entries = await file_manager.list_directory(path)
+        entries = await file_manager.list_directory(path, recursive=recursive)
         
         # Apply pattern filtering if specified
         if pattern:
@@ -344,6 +340,7 @@ async def get_file(path: str) -> str:
         return f"Error: {str(e)}"
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     # Parse command line arguments
     test_mode = "--test-mode" in sys.argv
     

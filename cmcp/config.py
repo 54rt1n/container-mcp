@@ -10,7 +10,6 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field, validator
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -65,8 +64,9 @@ BASE_PATHS = get_base_paths()
 class BashConfig(BaseModel):
     """Configuration for Bash Manager."""
 
-    sandbox_dir: str = Field(default=os.path.join(BASE_PATHS["sandbox_root"], "bash"))
+    sandbox_dir: str = Field(default=BASE_PATHS["sandbox_root"])
     allowed_commands: List[str] = Field(default_factory=list)
+    command_restricted: bool = Field(default=True)
     timeout_default: int = Field(default=30)
     timeout_max: int = Field(default=120)
 
@@ -74,7 +74,7 @@ class BashConfig(BaseModel):
 class PythonConfig(BaseModel):
     """Configuration for Python Manager."""
 
-    sandbox_dir: str = Field(default=os.path.join(BASE_PATHS["sandbox_root"], "python"))
+    sandbox_dir: str = Field(default=BASE_PATHS["sandbox_root"])
     memory_limit: int = Field(default=256)
     timeout_default: int = Field(default=30)
     timeout_max: int = Field(default=120)
@@ -83,7 +83,7 @@ class PythonConfig(BaseModel):
 class FileSystemConfig(BaseModel):
     """Configuration for File Manager."""
 
-    base_dir: str = Field(default=os.path.join(BASE_PATHS["sandbox_root"], "files"))
+    base_dir: str = Field(default=BASE_PATHS["sandbox_root"])
     max_file_size_mb: int = Field(default=10)
     allowed_extensions: List[str] = Field(default_factory=list)
 
@@ -141,17 +141,16 @@ def load_env_config() -> Dict[str, Any]:
     config["sandbox_root"] = os.environ.get("SANDBOX_ROOT", BASE_PATHS["sandbox_root"])
     config["temp_dir"] = os.environ.get("TEMP_DIR", BASE_PATHS["temp_dir"])
     
-    # Create necessary subdirectories
-    os.makedirs(os.path.join(config["sandbox_root"], "bash"), exist_ok=True)
-    os.makedirs(os.path.join(config["sandbox_root"], "python"), exist_ok=True)
-    os.makedirs(os.path.join(config["sandbox_root"], "files"), exist_ok=True)
-    os.makedirs(os.path.join(config["sandbox_root"], "browser"), exist_ok=True)
+    # Create necessary directory
+    os.makedirs(config["sandbox_root"], exist_ok=True)
     os.makedirs(config["temp_dir"], exist_ok=True)
     
     # Bash config
+    command_restricted = os.environ.get("COMMAND_RESTRICTED", "true").lower() == "true"
     bash_config = BashConfig(
-        sandbox_dir=os.path.join(config["sandbox_root"], "bash"),
+        sandbox_dir=config["sandbox_root"],
         allowed_commands=os.environ.get("BASH_ALLOWED_COMMANDS", "").split(",") if os.environ.get("BASH_ALLOWED_COMMANDS") else [],
+        command_restricted=command_restricted,
         timeout_default=int(os.environ.get("BASH_TIMEOUT_DEFAULT", "30")),
         timeout_max=int(os.environ.get("BASH_TIMEOUT_MAX", "120")),
     )
@@ -159,7 +158,7 @@ def load_env_config() -> Dict[str, Any]:
     
     # Python config
     python_config = PythonConfig(
-        sandbox_dir=os.path.join(config["sandbox_root"], "python"),
+        sandbox_dir=config["sandbox_root"],
         memory_limit=int(os.environ.get("PYTHON_MEMORY_LIMIT", "256")),
         timeout_default=int(os.environ.get("PYTHON_TIMEOUT_DEFAULT", "30")),
         timeout_max=int(os.environ.get("PYTHON_TIMEOUT_MAX", "120")),
@@ -168,7 +167,7 @@ def load_env_config() -> Dict[str, Any]:
     
     # File system config
     filesystem_config = FileSystemConfig(
-        base_dir=os.path.join(config["sandbox_root"], "files"),
+        base_dir=config["sandbox_root"],
         max_file_size_mb=int(os.environ.get("FILE_MAX_SIZE_MB", "10")),
         allowed_extensions=os.environ.get("FILE_ALLOWED_EXTENSIONS", "").split(",") if os.environ.get("FILE_ALLOWED_EXTENSIONS") else [],
     )

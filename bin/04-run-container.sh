@@ -70,8 +70,8 @@ if [ "${RUN_CONTAINER}" = "true" ]; then
     echo "Running container directly..."
     
     # Get configuration from env file
-    if [ -f "volume/config/custom.env" ]; then
-        ENV_FILE="volume/config/custom.env"
+    if [ -f "volume/config/app.env" ]; then
+        ENV_FILE="volume/config/app.env"
     elif [ -f "volume/config/default.env" ]; then
         ENV_FILE="volume/config/default.env"
     else
@@ -82,13 +82,15 @@ if [ "${RUN_CONTAINER}" = "true" ]; then
     # Get MCP port from env file
     MCP_PORT=$(grep "^MCP_PORT=" ${ENV_FILE} | cut -d'=' -f2)
     MCP_PORT=${MCP_PORT:-8000}  # Default to 8000 if not found
+    LISTENER_HOST=$(grep "^LISTENER_HOST=" ${ENV_FILE} | cut -d'=' -f2)
+    LISTENER_HOST=${LISTENER_HOST:-127.0.0.1}
     
-    echo "Starting container on port ${MCP_PORT}..."
+    echo "Starting container on ${LISTENER_HOST}:${MCP_PORT}..."
     
     # Run the container with the --replace flag to handle existing containers
     ${CONTAINER_CMD} run -d \
         --name ${CONTAINER_NAME} \
-        -p 127.0.0.1:${MCP_PORT}:8000 \
+        -p ${LISTENER_HOST}:${MCP_PORT}:8000 \
         -v "$(pwd)/volume/config:/app/config:Z" \
         -v "$(pwd)/volume/logs:/app/logs:Z" \
         -v "$(pwd)/volume/data:/app/data:Z" \

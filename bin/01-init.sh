@@ -22,7 +22,12 @@ chmod -R 777 volume
 # Create default configuration
 if [ ! -f volume/config/default.env ]; then
     echo "Creating default configuration..."
-    cat > volume/config/default.env << EOF
+    # Try to copy from resources if available
+    if [ -f resources/default.env ]; then
+        cp resources/default.env volume/config/default.env
+    else
+        # Fall back to original method
+        cat > volume/config/default.env << EOF
 # Container-MCP Default Configuration
 MCP_PORT=8000
 MCP_LOG_LEVEL=info
@@ -32,7 +37,28 @@ MCP_TIMEOUT=30
 MCP_ENABLE_FIREJAIL=true
 MCP_ENABLE_APPARMOR=true
 EOF
+    fi
     echo "Default configuration created at volume/config/default.env"
+fi
+
+# Copy unrestricted configuration
+if [ ! -f volume/config/unrestricted.env ]; then
+    # Create config directory if it doesn't exist
+    mkdir -p volume/config
+    
+    # Copy unrestricted.env from resources
+    if [ -f resources/unrestricted.env ]; then
+        cp resources/unrestricted.env volume/config/unrestricted.env
+        echo "Unrestricted configuration copied to volume/config/unrestricted.env"
+    else
+        echo "Warning: resources/unrestricted.env not found, configuration not copied"
+    fi
+fi
+
+# Create app.env as a copy of default.env if it doesn't exist
+if [ ! -f volume/config/app.env ] && [ -f volume/config/default.env ]; then
+    cp volume/config/default.env volume/config/app.env
+    echo "App configuration created at volume/config/app.env"
 fi
 
 # Check for uv installation

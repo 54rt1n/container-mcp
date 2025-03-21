@@ -192,11 +192,12 @@ class FileManager:
         
         return True
     
-    async def list_directory(self, path: str = "/") -> List[Dict[str, Any]]:
+    async def list_directory(self, path: str = "/", recursive: bool = True) -> List[Dict[str, Any]]:
         """List contents of a directory safely.
         
         Args:
             path: Path to the directory (relative to base_dir)
+            recursive: Whether to list files recursively (default: True)
             
         Returns:
             List of directory entries with metadata
@@ -219,22 +220,57 @@ class FileManager:
             raise NotADirectoryError(f"Path is not a directory: {path}")
         
         # List the directory
-        logger.debug(f"Listing directory: {path}")
+        logger.debug(f"Listing directory: {path} (recursive={recursive})")
         entries = []
-        for entry in os.scandir(full_path):
-            # Create relative path from base dir
-            rel_path = os.path.relpath(entry.path, self.base_dir)
-            
-            # Replace backslashes with forward slashes for consistency
-            rel_path = rel_path.replace('\\', '/')
-            
-            entries.append({
-                "name": entry.name,
-                "path": rel_path,
-                "is_directory": entry.is_dir(),
-                "size": entry.stat().st_size if entry.is_file() else None,
-                "modified": entry.stat().st_mtime
-            })
+        
+        if recursive:
+            # Walk the directory tree recursively
+            for root, dirs, files in os.walk(full_path):
+                # Process all files in current directory
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(file_path, self.base_dir)
+                    # Replace backslashes with forward slashes for consistency
+                    rel_path = rel_path.replace('\\', '/')
+                    
+                    entries.append({
+                        "name": file,
+                        "path": rel_path,
+                        "is_directory": False,
+                        "size": os.path.getsize(file_path),
+                        "modified": os.path.getmtime(file_path)
+                    })
+                
+                # Process all directories in current directory
+                for dir_name in dirs:
+                    dir_path = os.path.join(root, dir_name)
+                    rel_path = os.path.relpath(dir_path, self.base_dir)
+                    # Replace backslashes with forward slashes for consistency
+                    rel_path = rel_path.replace('\\', '/')
+                    
+                    entries.append({
+                        "name": dir_name,
+                        "path": rel_path,
+                        "is_directory": True,
+                        "size": None,
+                        "modified": os.path.getmtime(dir_path)
+                    })
+        else:
+            # Non-recursive listing (original behavior)
+            for entry in os.scandir(full_path):
+                # Create relative path from base dir
+                rel_path = os.path.relpath(entry.path, self.base_dir)
+                
+                # Replace backslashes with forward slashes for consistency
+                rel_path = rel_path.replace('\\', '/')
+                
+                entries.append({
+                    "name": entry.name,
+                    "path": rel_path,
+                    "is_directory": entry.is_dir(),
+                    "size": entry.stat().st_size if entry.is_file() else None,
+                    "modified": entry.stat().st_mtime
+                })
         
         return entries
     

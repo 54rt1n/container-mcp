@@ -5,7 +5,7 @@ import json
 
 async def run_sse_client():
     # Replace with your server's SSE endpoint
-    sse_url = "http://localhost:9001/sse"
+    sse_url = "http://localhost:8000/sse"
 
     # Connect to the SSE endpoint
     async with sse_client(sse_url) as (read, write):

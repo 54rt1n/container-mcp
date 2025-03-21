@@ -53,20 +53,20 @@ else
     echo "Network ${NETWORK_NAME} already exists."
 fi
 
-# Copy default configuration if custom doesn't exist
-if [ ! -f "volume/config/custom.env" ] && [ -f "volume/config/default.env" ]; then
-    echo "Creating custom configuration from default..."
-    cp volume/config/default.env volume/config/custom.env
-    echo "You can modify the custom configuration in volume/config/custom.env"
+# Copy default configuration if app.env doesn't exist
+if [ ! -f "volume/config/app.env" ] && [ -f "volume/config/default.env" ]; then
+    echo "Creating app configuration from default..."
+    cp volume/config/default.env volume/config/app.env
+    echo "You can modify the app configuration in volume/config/app.env"
 fi
 
-# Ensure port comments are correct in custom.env
-if [ -f "volume/config/custom.env" ]; then
+# Ensure port comments are correct in app.env
+if [ -f "volume/config/app.env" ]; then
     # Check if port comment exists, add if not
-    if ! grep -q "Note: The port value below defines the external port mapping" volume/config/custom.env; then
+    if ! grep -q "Note: The port value below defines the external port mapping" volume/config/app.env; then
         # Create temporary file with updated content
-        sed -i '2i# Note: The port value below defines the external port mapping.\n# Inside the container, the application always listens on port 8000.' volume/config/custom.env
-        echo "Updated port configuration comments in custom.env"
+        sed -i '2i# Note: The port value below defines the external port mapping.\n# Inside the container, the application always listens on port 8000.' volume/config/app.env
+        echo "Updated port configuration comments in app.env"
     fi
 fi
 

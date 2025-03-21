@@ -32,7 +32,8 @@ class BashManager:
         sandbox_dir: str,
         allowed_commands: List[str],
         timeout_default: int = 30,
-        timeout_max: int = 120
+        timeout_max: int = 120,
+        command_restricted: bool = True
     ):
         """Initialize the BashManager.
         
@@ -41,16 +42,20 @@ class BashManager:
             allowed_commands: List of allowed bash commands
             timeout_default: Default timeout in seconds
             timeout_max: Maximum allowed timeout in seconds
+            command_restricted: Whether to restrict commands to allowed list
         """
         self.sandbox_dir = sandbox_dir
         self.allowed_commands = allowed_commands
         self.timeout_default = timeout_default
         self.timeout_max = timeout_max
+        self.command_restricted = command_restricted
         
         # Ensure sandbox directory exists
         os.makedirs(self.sandbox_dir, exist_ok=True)
         logger.debug(f"BashManager initialized with sandbox at {self.sandbox_dir}")
-        logger.debug(f"Allowed commands: {', '.join(allowed_commands)}")
+        logger.debug(f"Command restriction {'enabled' if command_restricted else 'disabled'}")
+        if command_restricted:
+            logger.debug(f"Allowed commands: {', '.join(allowed_commands) if allowed_commands else 'none'}")
     
     @classmethod
     def from_env(cls, config=None):
@@ -71,7 +76,8 @@ class BashManager:
             sandbox_dir=config.bash_config.sandbox_dir,
             allowed_commands=config.bash_config.allowed_commands,
             timeout_default=config.bash_config.timeout_default,
-            timeout_max=config.bash_config.timeout_max
+            timeout_max=config.bash_config.timeout_max,
+            command_restricted=config.bash_config.command_restricted
         )
     
     async def execute(self, command: str, timeout: Optional[int] = None) -> BashResult:
@@ -95,14 +101,26 @@ class BashManager:
             logger.warning("Empty command received")
             return BashResult(stdout="", stderr="Empty command", exit_code=1)
         
+        # Check command against allowed list if restriction is enabled
         base_cmd = os.path.basename(cmd_parts[0])
-        if base_cmd not in self.allowed_commands:
-            logger.warning(f"Command not allowed: {base_cmd}")
-            return BashResult(
-                stdout="", 
-                stderr=f"Command not allowed: {base_cmd}. Allowed commands: {', '.join(self.allowed_commands)}",
-                exit_code=1
-            )
+        if self.command_restricted:
+            if not self.allowed_commands:
+                logger.warning("No allowed commands configured")
+                return BashResult(
+                    stdout="", 
+                    stderr="Command restrictions enabled but no commands are allowed. Add commands to BASH_ALLOWED_COMMANDS or set COMMAND_RESTRICTED=false",
+                    exit_code=1
+                )
+            
+            if base_cmd not in self.allowed_commands:
+                logger.warning(f"Command not allowed: {base_cmd}")
+                return BashResult(
+                    stdout="", 
+                    stderr=f"Command not allowed: {base_cmd}. Allowed commands: {', '.join(self.allowed_commands)}",
+                    exit_code=1
+                )
+        else:
+            logger.debug(f"Command restrictions disabled, allowing command: {base_cmd}")
         
         # Use environment-aware sandbox command
         sandbox_cmd = self._get_sandbox_command(command)
