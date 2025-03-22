@@ -176,7 +176,7 @@ try:
     exec_globals = {{'__builtins__': __builtins__}}
     exec_locals = {{}}
     
-    exec('''{code}''', exec_globals, exec_locals)
+    exec({repr(code)}, exec_globals, exec_locals)
     
     # Check if the code returned a value
     if '_' in exec_locals:

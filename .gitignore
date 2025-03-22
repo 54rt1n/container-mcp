@@ -52,3 +52,5 @@ volume/
 .coverage
 htmlcov/
 .pytest_cache/
+/app
+/config

@@ -29,7 +29,8 @@ class FileManager:
         self,
         base_dir: str,
         max_file_size_mb: int = 10,
-        allowed_extensions: List[str] = None
+        allowed_extensions: List[str] = None,
+        command_restricted: bool = True
     ):
         """Initialize the FileManager.
         
@@ -37,15 +38,19 @@ class FileManager:
             base_dir: Base directory for file operations
             max_file_size_mb: Maximum file size in MB
             allowed_extensions: List of allowed file extensions
+            command_restricted: Whether to restrict file extensions to allowed list
         """
         self.base_dir = base_dir
         self.max_file_size_mb = max_file_size_mb
-        self.allowed_extensions = allowed_extensions or ["txt", "md", "csv", "json", "py"]
+        self.allowed_extensions = allowed_extensions or ["txt", "md", "csv", "json", "py", "sh"]
+        self.command_restricted = command_restricted
         
         # Ensure base directory exists
         os.makedirs(self.base_dir, exist_ok=True)
         logger.debug(f"FileManager initialized with base dir at {self.base_dir}")
-        logger.debug(f"Allowed extensions: {', '.join(self.allowed_extensions)}")
+        logger.debug(f"Command restriction {'enabled' if command_restricted else 'disabled'}")
+        if command_restricted:
+            logger.debug(f"Allowed extensions: {', '.join(self.allowed_extensions)}")
     
     @classmethod
     def from_env(cls, config=None):
@@ -65,7 +70,8 @@ class FileManager:
         return cls(
             base_dir=config.filesystem_config.base_dir,
             max_file_size_mb=config.filesystem_config.max_file_size_mb,
-            allowed_extensions=config.filesystem_config.allowed_extensions
+            allowed_extensions=config.filesystem_config.allowed_extensions,
+            command_restricted=config.bash_config.command_restricted
         )
     
     def _validate_path(self, path: str) -> str:
@@ -102,6 +108,11 @@ class FileManager:
         Raises:
             ValueError: If extension is not allowed
         """
+        # Skip validation if command restrictions are disabled
+        if not self.command_restricted:
+            logger.debug(f"Command restrictions disabled, skipping extension validation for: {path}")
+            return
+            
         ext = os.path.splitext(path)[1].lstrip(".")
         if ext and ext not in self.allowed_extensions:
             logger.warning(f"File extension not allowed: {ext}")

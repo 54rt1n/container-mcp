@@ -7,7 +7,7 @@
          #    #   # #   #     #  #  #     #     # #     # #     #           
          #    #    #    #     # ### ##### #     # ######  ##### #####       
 ==============================================================================
-                      CONTAINER-MCP AVAILABLE COMMANDS v1.0
+                      CONTAINER-MCP AVAILABLE COMMANDS v1.1
 ==============================================================================
 
 This document lists all available commands in the Container-MCP environment.
@@ -39,6 +39,8 @@ Feel free to use any of these tools in your sandbox environment.
   paste       - Merge lines of files
   join        - Join lines of two files on a common field
   comm        - Compare two sorted files line by line
+  poppler-utils - PDF manipulation utilities
+  wkhtmltopdf - Convert HTML to PDF
 
 --[ FILE MANAGEMENT ]------------------------------------------------------
 
@@ -50,9 +52,14 @@ Feel free to use any of these tools in your sandbox environment.
   tar         - Archive utility
   zip/unzip   - Zip archive utility
   gzip/gunzip - Compress or expand files
+  pigz        - Parallel implementation of gzip
   bzip2/bunzip2 - Higher compression than gzip
   xz          - Highest compression
   zstd        - Fast compression
+  lzip        - LZMA-based compression
+  lzma        - LZMA compression utility
+  p7zip-full  - 7z file archive utility
+  rar/unrar   - RAR archive utility
   cpio        - Copy files to and from archives
   rsync       - Remote file copy and synchronization
   scp         - Secure copy
@@ -76,6 +83,14 @@ Feel free to use any of these tools in your sandbox environment.
   parallel    - Execute commands in parallel
   neofetch    - System information tool with ASCII art logo
   sysstat     - Performance monitoring tools
+  bc          - Command line calculator
+  entr        - Run commands when files change
+  moreutils   - Collection of useful Unix tools
+  zsh         - Z shell, alternative to bash
+  procps      - Process information utilities
+  iproute2    - Network configuration tools
+  apparmor    - Security profile manager
+  firejail    - Security sandbox program
 
 --[ NETWORK TOOLS ]-------------------------------------------------------
 
@@ -91,27 +106,73 @@ Feel free to use any of these tools in your sandbox environment.
   whois       - Client for the whois directory service
   netstat     - Network statistics
   ss          - Another utility to investigate sockets
+  net-tools   - Collection of networking utilities
+  dnsutils    - DNS utilities including dig and host
   iperf3      - Network performance measurement tool
   nc          - Netcat, the TCP/IP swiss army knife
   socat       - Multipurpose relay
   httpie      - User-friendly HTTP client
+  tshark      - Command-line network protocol analyzer
 
 --[ MULTIMEDIA ]----------------------------------------------------------
 
   ffmpeg      - Record, convert, and stream audio and video
   imagemagick - Image manipulation
   tesseract   - OCR (Optical Character Recognition)
+  chromium-browser - Web browser
+  chromium-driver - WebDriver for Chromium
 
 --[ PROGRAMMING AND DEVELOPMENT ]-----------------------------------------
 
   python3     - Python programming language interpreter
+  python3.12  - Latest Python interpreter
+  python3-pip - Python package installer
+  uv          - Fast Python package installer and resolver
   gcc         - GNU C and C++ compiler
   make        - GNU make utility
   git         - Distributed version control system
+  tig         - Text-mode interface for Git
   nodejs      - JavaScript runtime
   npm         - Node package manager
-  go          - Go programming language compiler
+  go/golang   - Go programming language compiler
+  build-essential - Development tools for building C/C++ code
+  libxml2-dev - Development files for libxml2
+  libxslt1-dev - Development files for libxslt
+  libssl-dev  - Development files for OpenSSL
+  libffi-dev  - Development files for libffi
+  hugo        - Static site generator
+
+--[ DATABASE TOOLS ]------------------------------------------------------
+
   sqlite3     - SQLite database
+  postgresql-client - PostgreSQL client
+  mysql-client - MySQL client
+  redis-tools - Redis client
+
+--[ SECURITY AND PENETRATION TESTING ]------------------------------------
+
+  nmap        - Network exploration and security scanning
+  nikto       - Web server scanner
+  sqlmap      - SQL injection tool
+  dirb        - Web content scanner
+  gobuster    - Directory and DNS bruteforcing tool
+  aircrack-ng - Wi-Fi security auditing tools
+  hydra       - Password cracking utility
+  hashcat     - Advanced password recovery
+  john        - John the Ripper password cracker
+
+--[ ENCRYPTION UTILITIES ]------------------------------------------------
+
+  gnupg       - GNU Privacy Guard
+  openssl     - OpenSSL toolkit
+  cryptsetup  - Disk encryption utility
+  age         - Simple, modern file encryption tool
+  keychain    - Authentication agent
+
+--[ INFRASTRUCTURE AS CODE ]----------------------------------------------
+
+  ansible     - IT automation platform
+  hugo        - Static site generator
 
 --[ TEXT ANALYSIS AND LANGUAGE TOOLS ]------------------------------------
 
@@ -120,6 +181,8 @@ Feel free to use any of these tools in your sandbox environment.
   wordnet     - Lexical database for English
   trans       - Translate Shell for language translation
   figlet      - Create ASCII text banners
+  tesseract-ocr - OCR engine
+  tesseract-ocr-eng - English language data for Tesseract
 
 ==============================================================================
          HAPPY COMPUTING! - USE THESE TOOLS WISELY AND EFFICIENTLY!

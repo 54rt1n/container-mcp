@@ -10,38 +10,65 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    # System essentials
     ca-certificates \
-    curl \
-    wget \
-    git \
+    procps \
+    net-tools \
+    dnsutils \
+    iproute2 \
+    lsof \
+    # Python environment
     python3.12 \
     python3.12-dev \
     python3.12-venv \
     python3-pip \
+    # Development tools
+    build-essential \
+    golang \
+    nodejs \
+    npm \
+    # Version control
+    git \
+    tig \
+    # Security & containerization
     firejail \
     apparmor \
-    chromium-browser \
-    chromium-driver \
-    jq \
-    yq \
+    # Text editors
     vim \
     nano \
-    tree \
+    neovim \
+    # System monitoring & analysis
     htop \
-    net-tools \
-    dnsutils \
-    procps \
-    lsof \
+    glances \
+    neofetch \
+    iotop \
+    sysstat \
+    strace \
+    ltrace \
+    # Network utilities
+    curl \
+    wget \
+    nmap \
+    traceroute \
+    mtr \
+    openssh-client \
+    socat \
+    netcat-openbsd \
+    httpie \
+    iperf3 \
+    tshark \
+    # Browsers and web tools
+    chromium-browser \
+    chromium-driver \
+    # File management
+    tree \
     rsync \
-    unzip \
-    zip \
     ncdu \
-    fd-find \
-    ripgrep \
-    bc \
-    bat \
+    ranger \
+    # Compression utilities
     tar \
     gzip \
+    pigz \
     bzip2 \
     xz-utils \
     p7zip-full \
@@ -51,54 +78,64 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     lzip \
     lzma \
     cpio \
+    unzip \
+    zip \
+    # Data formats & processing
+    jq \
+    yq \
+    # Search tools
+    fd-find \
+    ripgrep \
+    silversearcher-ag \
+    # Shell & terminal utilities
+    tmux \
+    byobu \
+    fzf \
+    zsh \
+    watch \
+    entr \
+    moreutils \
+    parallel \
+    pv \
+    less \
+    bc \
+    bat \
+    ncurses-bin \
+    # Media processing
     ffmpeg \
-    build-essential \
     libavcodec-dev \
     libavformat-dev \
     libswscale-dev \
     libavfilter-dev \
-    libssl-dev \
-    libffi-dev \
     imagemagick \
     libmagickwand-dev \
-    libxml2-dev \
-    libxslt1-dev \
-    tmux \
-    fzf \
-    moreutils \
-    parallel \
-    pv \
-    ranger \
-    silversearcher-ag \
-    openssh-client \
-    tig \
+    # Security and penetration testing tools
     nmap \
-    iproute2 \
-    traceroute \
-    mtr \
-    pigz \
-    less \
-    byobu \
-    watch \
-    glances \
-    neofetch \
-    neovim \
-    sqlite3 \
+    nikto \
+    sqlmap \
+    dirb \
+    gobuster \
+    aircrack-ng \
+    hydra \
+    hashcat \
+    john \
+    # Encryption utilities
+    gnupg \
+    openssl \
+    cryptsetup \
+    age \
+    keychain \
+    libssl-dev \
+    libffi-dev \
+    # Database clients
+    postgresql-client \
+    mysql-client \
     redis-tools \
-    zsh \
-    strace \
-    ltrace \
-    sysstat \
-    iotop \
-    socat \
-    netcat-openbsd \
-    httpie \
-    iperf3 \
-    entr \
-    ncurses-bin \
-    golang \
-    nodejs \
-    npm \
+    sqlite3 \
+    # Infrastructure as code tools
+    ansible \
+    hugo \
+    # Document processing & language tools
     pandoc \
     tesseract-ocr \
     tesseract-ocr-eng \
@@ -110,6 +147,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wordnet \
     aspell \
     aspell-en \
+    libxml2-dev \
+    libxslt1-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
