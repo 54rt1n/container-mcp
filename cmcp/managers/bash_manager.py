@@ -132,7 +132,8 @@ class BashManager:
                     shell=True,
                     capture_output=True,
                     text=True,
-                    timeout=timeout
+                    timeout=timeout,
+                    cwd=self.sandbox_dir
                 )
                 return BashResult(
                     stdout=process.stdout,
