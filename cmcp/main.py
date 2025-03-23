@@ -6,8 +6,11 @@
 
 import os
 import sys
+import signal
 from pathlib import Path
 import logging
+import asyncio
+from typing import Dict, Any, Optional, List
 
 # Load environment file directly
 def load_env_file():
@@ -43,9 +46,6 @@ if not (os.path.exists('/.dockerenv') or os.path.exists('/run/.containerenv')):
     os.makedirs(os.environ["SANDBOX_ROOT"], exist_ok=True)
     os.makedirs(os.environ["TEMP_DIR"], exist_ok=True)
 
-import asyncio
-from typing import Dict, Any, Optional
-
 from mcp.server.fastmcp import FastMCP
 
 from cmcp.config import load_config
@@ -54,6 +54,7 @@ from cmcp.managers.python_manager import PythonManager
 from cmcp.managers.file_manager import FileManager
 from cmcp.managers.web_manager import WebManager
 from cmcp.utils.logging import setup_logging
+from cmcp.tools import register_all_tools
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -74,275 +75,12 @@ web_manager = WebManager.from_env(config)
 log_file = os.path.join("logs", "cmcp.log") if os.path.exists("logs") else None
 setup_logging(config.log_level, log_file)
 
-@mcp.tool()
-async def system_run_command(command: str, working_dir: Optional[str] = None) -> Dict[str, Any]:
-    """Execute a bash command safely in a sandboxed environment.
-
-    See AVAILABLE_COMMANDS.txt for the extensive list of allowed commands.
-    
-    Args:
-        command: The bash command to execute
-        working_dir: Optional working directory (ignored in sandbox)
-        
-    Returns:
-        Dictionary containing stdout, stderr, and exit code
-    """
-    result = await bash_manager.execute(command)
-    return {
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "exit_code": result.exit_code
-    }
-
-@mcp.tool()
-async def system_run_python(code: str, working_dir: Optional[str] = None) -> Dict[str, Any]:
-    """Execute Python code in a secure sandbox.
-    
-    Args:
-        code: Python code to execute
-        working_dir: Optional working directory (ignored in sandbox)
-        
-    Returns:
-        Dictionary containing output, error, and execution result
-    """
-    result = await python_manager.execute(code)
-    return {
-        "output": result.output,
-        "error": result.error,
-        "result": result.result
-    }
-
-@mcp.tool()
-async def file_read(path: str, encoding: str = "utf-8") -> Dict[str, Any]:
-    """Read file contents safely.
-    
-    Args:
-        path: Path to the file (relative to sandbox root)
-        encoding: File encoding
-        
-    Returns:
-        Dictionary containing file content and metadata
-    """
-    try:
-        content, metadata = await file_manager.read_file(path)
-        return {
-            "content": content,
-            "size": metadata.size,
-            "modified": metadata.modified_time,
-            "success": True
-        }
-    except Exception as e:
-        logger.warning(f"Error reading file {path}: {str(e)}")
-        return {
-            "content": "",
-            "error": str(e),
-            "success": False
-        }
-
-@mcp.tool()
-async def file_write(path: str, content: str, encoding: str = "utf-8") -> Dict[str, Any]:
-    """Write content to a file safely.
-    
-    Args:
-        path: Path to the file (relative to sandbox root)
-        content: Content to write
-        encoding: File encoding
-        
-    Returns:
-        Dictionary containing success status and file path
-    """
-    try:
-        success = await file_manager.write_file(path, content)
-        return {
-            "success": success,
-            "path": path
-        }
-    except Exception as e:
-        logger.warning(f"Error writing file {path}: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
-@mcp.tool()
-async def file_list(path: str = "/", pattern: Optional[str] = None, recursive: bool = True) -> Dict[str, Any]:
-    """List contents of a directory safely.
-    
-    Args:
-        path: Path to the directory (relative to sandbox root)
-        pattern: Optional glob pattern to filter files
-        recursive: Whether to list files recursively (default: True)
-        
-    Returns:
-        Dictionary containing directory entries
-    """
-    try:
-        entries = await file_manager.list_directory(path, recursive=recursive)
-        
-        # Apply pattern filtering if specified
-        if pattern:
-            import fnmatch
-            entries = [entry for entry in entries if fnmatch.fnmatch(entry["name"], pattern)]
-            
-        return {
-            "entries": entries,
-            "path": path,
-            "success": True
-        }
-    except Exception as e:
-        logger.warning(f"Error listing directory {path}: {str(e)}")
-        return {
-            "entries": [],
-            "path": path,
-            "error": str(e),
-            "success": False
-        }
-
-@mcp.tool()
-async def file_delete(path: str) -> Dict[str, Any]:
-    """Delete a file safely.
-    
-    Args:
-        path: Path of the file to delete
-        
-    Returns:
-        Dictionary containing success status and path
-    """
-    try:
-        success = await file_manager.delete_file(path)
-        return {
-            "success": success,
-            "path": path
-        }
-    except Exception as e:
-        logger.warning(f"Error deleting file {path}: {str(e)}")
-        return {
-            "success": False,
-            "path": path,
-            "error": str(e)
-        }
-
-@mcp.tool()
-async def file_move(source: str, destination: str) -> Dict[str, Any]:
-    """Move or rename a file safely.
-    
-    Args:
-        source: Source file path
-        destination: Destination file path
-        
-    Returns:
-        Dictionary containing success status, source and destination
-    """
-    try:
-        success = await file_manager.move_file(source, destination)
-        return {
-            "success": success,
-            "source": source,
-            "destination": destination
-        }
-    except Exception as e:
-        logger.warning(f"Error moving file {source} to {destination}: {str(e)}")
-        return {
-            "success": False,
-            "source": source,
-            "destination": destination,
-            "error": str(e)
-        }
-
-@mcp.tool()
-async def web_search(query: str) -> Dict[str, Any]:
-    """Use a search engine to find information on the web.
-    
-    Args:
-        query: The query to search the web for
-        
-    Returns:
-        Dictionary containing search results
-    """
-    return await web_manager.search_web(query)
-
-@mcp.tool()
-async def web_scrape(url: str, selector: Optional[str] = None) -> Dict[str, Any]:
-    """Scrape a specific URL and return the content.
-    
-    Args:
-        url: The URL to scrape
-        selector: Optional CSS selector to target specific content
-        
-    Returns:
-        Dictionary containing page content and metadata
-    """
-    result = await web_manager.scrape_webpage(url, selector)
-    return {
-        "content": result.content,
-        "url": result.url,
-        "title": result.title,
-        "success": result.success,
-        "error": result.error
-    }
-
-@mcp.tool()
-async def web_browse(url: str) -> Dict[str, Any]:
-    """Interactively browse a website using Playwright.
-    
-    Args:
-        url: Starting URL for browsing session
-        
-    Returns:
-        Dictionary containing page content and metadata
-    """
-    result = await web_manager.browse_webpage(url)
-    return {
-        "content": result.content,
-        "url": result.url,
-        "title": result.title,
-        "success": result.success,
-        "error": result.error
-    }
-
-@mcp.tool()
-async def system_env_var(var_name: Optional[str] = None) -> Dict[str, Any]:
-    """Get environment variable values.
-    
-    Args:
-        var_name: Specific environment variable to get (optional)
-        
-    Returns:
-        Dictionary containing environment variables
-    """
-    if var_name:
-        return {
-            "variables": {var_name: os.environ.get(var_name, "")},
-            "requested_var": os.environ.get(var_name, "")
-        }
-    else:
-        # Only return safe environment variables
-        safe_env = {}
-        for key, value in os.environ.items():
-            # Filter out sensitive variables
-            if not any(sensitive in key.lower() for sensitive in ["key", "secret", "password", "token", "auth"]):
-                safe_env[key] = value
-        return {"variables": safe_env}
-
-@mcp.resource("file://{path}")
-async def get_file(path: str) -> str:
-    """Get file contents as a resource.
-    
-    Args:
-        path: Path to the file (relative to sandbox root)
-        
-    Returns:
-        File contents
-    """
-    try:
-        content, _ = await file_manager.read_file(path)
-        return content
-    except Exception as e:
-        logger.error(f"Error accessing file resource {path}: {str(e)}")
-        return f"Error: {str(e)}"
+# Register all tools
+register_all_tools(mcp, bash_manager, python_manager, file_manager, web_manager)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+    
     # Parse command line arguments
     test_mode = "--test-mode" in sys.argv
     
@@ -356,9 +94,42 @@ if __name__ == "__main__":
         port = int(os.environ.get("MCP_PORT", config.mcp_port))
         host = os.environ.get("MCP_HOST", config.mcp_host)
     
+    # Allow command-line arguments to override environment settings
+    for i, arg in enumerate(sys.argv):
+        if arg == "--port" and i+1 < len(sys.argv):
+            port = int(sys.argv[i+1])
+        elif arg == "--host" and i+1 < len(sys.argv):
+            host = sys.argv[i+1]
+    
     # Directly set host and port in MCP settings
     mcp.settings.host = host
     mcp.settings.port = port
+    
+    # Set up signal handlers for graceful shutdown
+    def handle_shutdown_signal(signum, frame):
+        signal_name = signal.Signals(signum).name
+        logger.info(f"Received {signal_name}, shutting down gracefully...")
+        
+        # Perform cleanup for managers if needed
+        for manager in [bash_manager, python_manager, file_manager, web_manager]:
+            if hasattr(manager, 'cleanup'):
+                try:
+                    logger.info(f"Cleaning up {manager.__class__.__name__}")
+                    manager.cleanup()
+                except Exception as e:
+                    logger.error(f"Error during cleanup of {manager.__class__.__name__}: {e}")
+        
+        # Stop the MCP server
+        if hasattr(mcp, 'shutdown'):
+            logger.info("Shutting down MCP server")
+            mcp.shutdown()
+        
+        # Exit
+        sys.exit(0)
+    
+    # Register signal handlers
+    signal.signal(signal.SIGINT, handle_shutdown_signal)  # Ctrl+C
+    signal.signal(signal.SIGTERM, handle_shutdown_signal)  # Termination signal
     
     # Run the server with the appropriate transport
     if test_mode:

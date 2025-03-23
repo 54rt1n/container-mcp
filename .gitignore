@@ -54,3 +54,5 @@ htmlcov/
 .pytest_cache/
 /app
 /config
+files.txt
+/kb_storage
