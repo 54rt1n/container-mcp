@@ -1,320 +1,28 @@
-"""MCP tools module.
+"""Knowledge base tools for Container-MCP.
 
-This module contains factory functions that create MCP tools for different functionalities.
-Each factory takes managers as input and returns a configured tool function.
+This module provides tools for interacting with the knowledge base, including
+document operations like writing, reading, adding preferences and references.
 """
 
-from typing import Dict, Any, Optional, List, Tuple, Callable
-import logging
+from typing import Dict, Any, Optional, List, Tuple
 
-logger = logging.getLogger(__name__)
-
-
-def create_system_tools(mcp, bash_manager, python_manager):
-    """Create and register system tools.
-    
-    Args:
-        mcp: The MCP instance
-        bash_manager: The bash manager instance
-        python_manager: The python manager instance
-    """
-    import os
-    
-    @mcp.tool()
-    async def system_run_command(command: str, working_dir: Optional[str] = None) -> Dict[str, Any]:
-        """Execute a bash command safely in a sandboxed environment.
-
-        See AVAILABLE_COMMANDS.txt for the extensive list of allowed commands.
-        
-        Args:
-            command: The bash command to execute
-            working_dir: Optional working directory (ignored in sandbox)
-            
-        Returns:
-            Dictionary containing stdout, stderr, and exit code
-        """
-        result = await bash_manager.execute(command)
-        return {
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "exit_code": result.exit_code
-        }
-    
-    @mcp.tool()
-    async def system_run_python(code: str, working_dir: Optional[str] = None) -> Dict[str, Any]:
-        """Execute Python code in a secure sandbox.
-        
-        Args:
-            code: Python code to execute
-            working_dir: Optional working directory (ignored in sandbox)
-            
-        Returns:
-            Dictionary containing output, error, and execution result
-        """
-        result = await python_manager.execute(code)
-        return {
-            "output": result.output,
-            "error": result.error,
-            "result": result.result
-        }
-    
-    @mcp.tool()
-    async def system_env_var(var_name: Optional[str] = None) -> Dict[str, Any]:
-        """Get environment variable values.
-        
-        Args:
-            var_name: Specific environment variable to get (optional)
-            
-        Returns:
-            Dictionary containing environment variables
-        """
-        if var_name:
-            return {
-                "variables": {var_name: os.environ.get(var_name, "")},
-                "requested_var": os.environ.get(var_name, "")
-            }
-        else:
-            # Only return safe environment variables
-            safe_env = {}
-            for key, value in os.environ.items():
-                # Filter out sensitive variables
-                if not any(sensitive in key.lower() for sensitive in ["key", "secret", "password", "token", "auth"]):
-                    safe_env[key] = value
-            return {"variables": safe_env}
+from mcp.server.fastmcp import FastMCP
+from cmcp.managers.knowledge_base_manager import KnowledgeBaseManager
+from cmcp.kb.models import DocumentMetadata
 
 
-def create_file_tools(mcp, file_manager):
-    """Create and register file tools.
-    
-    Args:
-        mcp: The MCP instance
-        file_manager: The file manager instance
-    """
-    @mcp.tool()
-    async def file_read(path: str, encoding: str = "utf-8") -> Dict[str, Any]:
-        """Read file contents safely.
-        
-        Args:
-            path: Path to the file (relative to sandbox root)
-            encoding: File encoding
-            
-        Returns:
-            Dictionary containing file content and metadata
-        """
-        try:
-            content, metadata = await file_manager.read_file(path)
-            return {
-                "content": content,
-                "size": metadata.size,
-                "modified": metadata.modified_time,
-                "success": True
-            }
-        except Exception as e:
-            logger.warning(f"Error reading file {path}: {str(e)}")
-            return {
-                "content": "",
-                "error": str(e),
-                "success": False
-            }
-    
-    @mcp.tool()
-    async def file_write(path: str, content: str, encoding: str = "utf-8") -> Dict[str, Any]:
-        """Write content to a file safely.
-        
-        Args:
-            path: Path to the file (relative to sandbox root)
-            content: Content to write
-            encoding: File encoding
-            
-        Returns:
-            Dictionary containing success status and file path
-        """
-        try:
-            success = await file_manager.write_file(path, content)
-            return {
-                "success": success,
-                "path": path
-            }
-        except Exception as e:
-            logger.warning(f"Error writing file {path}: {str(e)}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
-    
-    @mcp.tool()
-    async def file_list(path: str = "/", pattern: Optional[str] = None, recursive: bool = True) -> Dict[str, Any]:
-        """List contents of a directory safely.
-        
-        Args:
-            path: Path to the directory (relative to sandbox root)
-            pattern: Optional glob pattern to filter files
-            recursive: Whether to list files recursively (default: True)
-            
-        Returns:
-            Dictionary containing directory entries
-        """
-        try:
-            entries = await file_manager.list_directory(path, recursive=recursive)
-            
-            # Apply pattern filtering if specified
-            if pattern:
-                import fnmatch
-                entries = [entry for entry in entries if fnmatch.fnmatch(entry["name"], pattern)]
-                
-            return {
-                "entries": entries,
-                "path": path,
-                "success": True
-            }
-        except Exception as e:
-            logger.warning(f"Error listing directory {path}: {str(e)}")
-            return {
-                "entries": [],
-                "path": path,
-                "error": str(e),
-                "success": False
-            }
-    
-    @mcp.tool()
-    async def file_delete(path: str) -> Dict[str, Any]:
-        """Delete a file safely.
-        
-        Args:
-            path: Path of the file to delete
-            
-        Returns:
-            Dictionary containing success status and path
-        """
-        try:
-            success = await file_manager.delete_file(path)
-            return {
-                "success": success,
-                "path": path
-            }
-        except Exception as e:
-            logger.warning(f"Error deleting file {path}: {str(e)}")
-            return {
-                "success": False,
-                "path": path,
-                "error": str(e)
-            }
-    
-    @mcp.tool()
-    async def file_move(source: str, destination: str) -> Dict[str, Any]:
-        """Move or rename a file safely.
-        
-        Args:
-            source: Source file path
-            destination: Destination file path
-            
-        Returns:
-            Dictionary containing success status, source and destination
-        """
-        try:
-            success = await file_manager.move_file(source, destination)
-            return {
-                "success": success,
-                "source": source,
-                "destination": destination
-            }
-        except Exception as e:
-            logger.warning(f"Error moving file {source} to {destination}: {str(e)}")
-            return {
-                "success": False,
-                "source": source,
-                "destination": destination,
-                "error": str(e)
-            }
-    
-    # Register file resource handler
-    @mcp.resource("file://{path}")
-    async def get_file(path: str) -> str:
-        """Get file contents as a resource.
-        
-        Args:
-            path: Path to the file (relative to sandbox root)
-            
-        Returns:
-            File contents
-        """
-        try:
-            content, _ = await file_manager.read_file(path)
-            return content
-        except Exception as e:
-            logger.error(f"Error accessing file resource {path}: {str(e)}")
-            return f"Error: {str(e)}"
-
-
-def create_web_tools(mcp, web_manager):
-    """Create and register web tools.
-    
-    Args:
-        mcp: The MCP instance
-        web_manager: The web manager instance
-    """
-    @mcp.tool()
-    async def web_search(query: str) -> Dict[str, Any]:
-        """Use a search engine to find information on the web.
-        
-        Args:
-            query: The query to search the web for
-            
-        Returns:
-            Dictionary containing search results
-        """
-        return await web_manager.search_web(query)
-    
-    @mcp.tool()
-    async def web_scrape(url: str, selector: Optional[str] = None) -> Dict[str, Any]:
-        """Scrape a specific URL and return the content.
-        
-        Args:
-            url: The URL to scrape
-            selector: Optional CSS selector to target specific content
-            
-        Returns:
-            Dictionary containing page content and metadata
-        """
-        result = await web_manager.scrape_webpage(url, selector)
-        return {
-            "content": result.content,
-            "url": result.url,
-            "title": result.title,
-            "success": result.success,
-            "error": result.error
-        }
-    
-    @mcp.tool()
-    async def web_browse(url: str) -> Dict[str, Any]:
-        """Interactively browse a website using Playwright.
-        
-        Args:
-            url: Starting URL for browsing session
-            
-        Returns:
-            Dictionary containing page content and metadata
-        """
-        result = await web_manager.browse_webpage(url)
-        return {
-            "content": result.content,
-            "url": result.url,
-            "title": result.title,
-            "success": result.success,
-            "error": result.error
-        }
-
-
-def create_kb_tools(mcp):
+def create_kb_tools(mcp: FastMCP) -> None:
     """Create and register knowledge base tools.
     
     Args:
         mcp: The MCP instance
     """
-    from cmcp.managers.knowledge_base_manager import KnowledgeBaseManager
-    
     @mcp.tool()
-    async def kb_write_document(content: str, namespace: str = None, collection: str = None, name: str = None, metadata: dict = None):
+    async def kb_write_document(content: str, 
+                              namespace: Optional[str] = None, 
+                              collection: Optional[str] = None, 
+                              name: Optional[str] = None, 
+                              metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Write a document to the knowledge base.
         
         Args:
@@ -372,7 +80,10 @@ def create_kb_tools(mcp):
         }
     
     @mcp.tool()
-    async def kb_read_document(namespace: str, collection: str, name: str, chunk_num: Optional[int] = None):
+    async def kb_read_document(namespace: str, 
+                             collection: str, 
+                             name: str, 
+                             chunk_num: Optional[int] = None) -> Dict[str, Any]:
         """Read a document from the knowledge base.
         
         Args:
@@ -406,15 +117,18 @@ def create_kb_tools(mcp):
             document = await kb_manager.read_document(document_path, chunk_num)
             return document
         except Exception as e:
-            error_message = f"Error reading document {namespace}/{collection}/{name}: {str(e)}"
-            logger.warning(error_message)
             return {
                 "error": "The document was invalid. Please repair the document metadata.",
                 "detail": str(e)
             }
     
     @mcp.tool()
-    async def kb_add_preference(namespace: str, collection: str, name: str, subject: str, predicate: str, object: str):
+    async def kb_add_preference(namespace: str, 
+                              collection: str, 
+                              name: str, 
+                              subject: str, 
+                              predicate: str, 
+                              object: str) -> Dict[str, Any]:
         """Add a preference triple to a document.
         
         Args:
@@ -455,8 +169,13 @@ def create_kb_tools(mcp):
         return result
     
     @mcp.tool()
-    async def kb_remove_preference(namespace: str, collection: str, name: str, subject: str, predicate: str, object: str):
-        """Remove a specific preference triple from a document.
+    async def kb_remove_preference(namespace: str, 
+                                 collection: str, 
+                                 name: str, 
+                                 subject: str, 
+                                 predicate: str, 
+                                 object: str) -> Dict[str, Any]:
+        """Remove references from a document matching the specified attributes.
         
         Args:
             namespace: Document namespace
@@ -490,15 +209,15 @@ def create_kb_tools(mcp):
         kb_manager = KnowledgeBaseManager.from_env()
         await kb_manager.initialize()
         document_path = f"{namespace}/{collection}/{name}"
-        
-        # Create a triple to remove
+        # Create a list containing a single triple
         triple = [(subject, predicate, object)]
         result = await kb_manager.remove_preference(document_path, triple)
-        
         return result
     
     @mcp.tool()
-    async def kb_remove_all_preferences(namespace: str, collection: str, name: str):
+    async def kb_remove_all_preferences(namespace: str, 
+                                      collection: str, 
+                                      name: str) -> Dict[str, Any]:
         """Remove all preference triples from a document.
         
         Args:
@@ -530,12 +249,16 @@ def create_kb_tools(mcp):
         
         # Remove all preferences
         result = await kb_manager.remove_preference(document_path, None)
-        
         return result
     
     @mcp.tool()
-    async def kb_add_reference(namespace: str, collection: str, name: str, 
-                             ref_namespace: str, ref_collection: str, ref_name: str, relation: str):
+    async def kb_add_reference(namespace: str, 
+                             collection: str, 
+                             name: str, 
+                             ref_namespace: str, 
+                             ref_collection: str, 
+                             ref_name: str, 
+                             relation: str) -> Dict[str, Any]:
         """Add a reference to another document.
         
         Args:
@@ -588,8 +311,13 @@ def create_kb_tools(mcp):
             }
     
     @mcp.tool()
-    async def kb_remove_reference(namespace: str, collection: str, name: str, 
-                               ref_namespace: str, ref_collection: str, ref_name: str, relation: str):
+    async def kb_remove_reference(namespace: str, 
+                                collection: str, 
+                                name: str, 
+                                ref_namespace: str, 
+                                ref_collection: str, 
+                                ref_name: str, 
+                                relation: str) -> Dict[str, Any]:
         """Remove references from a document matching the specified attributes.
         
         Args:
@@ -640,7 +368,9 @@ def create_kb_tools(mcp):
         return result
     
     @mcp.tool()
-    async def kb_list_documents(namespace: Optional[str] = None, collection: Optional[str] = None, recursive: bool = True):
+    async def kb_list_documents(namespace: Optional[str] = None, 
+                              collection: Optional[str] = None, 
+                              recursive: bool = True) -> Dict[str, Any]:
         """List documents in the knowledge base.
         
         Args:
@@ -690,10 +420,12 @@ def create_kb_tools(mcp):
         return {"documents": documents, "count": len(documents)}
     
     @mcp.tool()
-    async def kb_move_document(namespace: str, collection: str, name: str, 
+    async def kb_move_document(namespace: str, 
+                             collection: str, 
+                             name: str, 
                              new_namespace: Optional[str] = None, 
                              new_collection: Optional[str] = None, 
-                             new_name: Optional[str] = None):
+                             new_name: Optional[str] = None) -> Dict[str, Any]:
         """Move a document to a new location in the knowledge base.
         
         Args:
@@ -736,8 +468,8 @@ def create_kb_tools(mcp):
         
         kb_manager = KnowledgeBaseManager.from_env()
         await kb_manager.initialize()
-        
         current_path = f"{namespace}/{collection}/{name}"
+        
         new_path = await kb_manager.move_document(
             current_path=current_path,
             new_namespace=new_namespace,
@@ -786,21 +518,4 @@ def create_kb_tools(mcp):
             document = await kb_manager.read_document(document_path)
             return document.get("content", f"Error: Could not retrieve content for {namespace}/{collection}/{name}")
         except Exception as e:
-            logger.error(f"Error accessing knowledge base document {namespace}/{collection}/{name}: {str(e)}")
-            return f"Error: {str(e)}"
-
-
-def register_all_tools(mcp, bash_manager, python_manager, file_manager, web_manager):
-    """Register all tools with the MCP instance.
-    
-    Args:
-        mcp: The MCP instance
-        bash_manager: The bash manager instance
-        python_manager: The python manager instance
-        file_manager: The file manager instance
-        web_manager: The web manager instance
-    """
-    create_system_tools(mcp, bash_manager, python_manager)
-    create_file_tools(mcp, file_manager)
-    create_web_tools(mcp, web_manager)
-    create_kb_tools(mcp) 
+            return f"Error: {str(e)}" 

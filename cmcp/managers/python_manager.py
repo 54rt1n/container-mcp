@@ -102,7 +102,8 @@ class PythonManager:
             proc = await asyncio.create_subprocess_exec(
                 *sandbox_cmd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
+                cwd=self.sandbox_dir  # Set working directory to sandbox
             )
             
             try:
@@ -160,6 +161,10 @@ import io
 import json
 import resource
 import traceback
+import os
+
+# Set working directory to current directory (which will be the sandbox dir)
+os.chdir(os.getcwd())
 
 # Redirect stdout to capture output
 original_stdout = sys.stdout
