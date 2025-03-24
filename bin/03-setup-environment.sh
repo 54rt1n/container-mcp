@@ -22,8 +22,7 @@ fi
 echo "Setting up directories for container volumes..."
 
 # Create directories if they don't exist
-mkdir -p volume/{data,logs,config,sandbox,temp}
-mkdir -p volume/sandbox/{bash,python,files,browser}
+mkdir -p volume/{data,logs,config,sandbox,temp,kb}
 
 # Copy the available commands list to sandbox
 if [ -f "resources/AVAILABLE_COMMANDS.txt" ]; then

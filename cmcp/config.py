@@ -95,6 +95,14 @@ class WebConfig(BaseModel):
     allowed_domains: Optional[List[str]] = Field(default=None)
 
 
+class KBConfig(BaseModel):
+    """Configuration for Knowledge Base Manager."""
+    
+    storage_path: str = Field(default=os.path.join(BASE_PATHS["base_dir"], "kb"))
+    timeout_default: int = Field(default=30)
+    timeout_max: int = Field(default=120)
+
+
 class MCPConfig(BaseModel):
     """MCP Server configuration."""
 
@@ -117,6 +125,7 @@ class AppConfig(BaseModel):
     python_config: PythonConfig = Field(default_factory=PythonConfig)
     filesystem_config: FileSystemConfig = Field(default_factory=FileSystemConfig)
     web_config: WebConfig = Field(default_factory=WebConfig)
+    kb_config: KBConfig = Field(default_factory=KBConfig)
     
     @validator("log_level")
     def validate_log_level(cls, v):
@@ -138,6 +147,7 @@ def load_env_config() -> Dict[str, Any]:
     config["log_level"] = os.environ.get("LOG_LEVEL", "INFO")
     
     # Sandbox config - use env vars if provided, otherwise use detected paths
+    config["base_dir"] = os.environ.get("BASE_DIR", BASE_PATHS["base_dir"])
     config["sandbox_root"] = os.environ.get("SANDBOX_ROOT", BASE_PATHS["sandbox_root"])
     config["temp_dir"] = os.environ.get("TEMP_DIR", BASE_PATHS["temp_dir"])
     
@@ -180,6 +190,15 @@ def load_env_config() -> Dict[str, Any]:
         allowed_domains=None if web_domains == "*" else web_domains.split(","),
     )
     config["web_config"] = web_config
+    
+    # Knowledge Base config
+    kb_storage_path = os.environ.get("CMCP_KB_STORAGE_PATH", os.path.join(config["base_dir"], "kb"))
+    kb_config = KBConfig(
+        storage_path=kb_storage_path,
+        timeout_default=int(os.environ.get("KB_TIMEOUT_DEFAULT", "30")),
+        timeout_max=int(os.environ.get("KB_TIMEOUT_MAX", "120")),
+    )
+    config["kb_config"] = kb_config
     
     return config
 

@@ -11,6 +11,7 @@ services:
       - ./data:/app/data:rw
       - ./logs:/app/logs:rw
       - ./sandbox:/app/sandbox:rw
+      - ./kb:/app/kb:rw
       - ./temp:/app/temp:rw
     env_file:
       - ${CUSTOM_ENV_FILE:-config/custom.env}
