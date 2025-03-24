@@ -1,20 +1,25 @@
+# cmcp/kb/document_store.py
+# container-mcp © 2025 by Martin Bukowski is licensed under Apache 2.0
+
 """Document store for the knowledge base."""
 
 import os
 import json
 import re
 import time
+import shutil
 from datetime import datetime
-from typing import List, Dict, Any, Tuple, Optional, Iterator
+from typing import List, Dict, Any, Optional
 from pathlib import Path
 
-from .models import DocumentMetadata, DocumentChunk
+from .models import DocumentIndex, DocumentFragment
+from .path import PathComponents, PartialPathComponents
 
 
 class DocumentStore:
     """Handles storage and retrieval of documents in the knowledge base."""
     
-    DEFAULT_CHUNK_SIZE = 4096  # 4KB chunks by default
+    DEFAULT_FRAGMENT_SIZE = 4096  # 4KB chunks by default
     
     def __init__(self, base_path: str):
         """Initialize the document store with a base path.
@@ -109,48 +114,45 @@ class DocumentStore:
         
         return slug
     
-    def ensure_directory(self, path: str) -> Path:
+    def ensure_directory(self, components: PathComponents) -> Path:
         """Ensure the directory for a document exists.
         
         Args:
-            path: Document path (namespace/collection/name)
+            components: PathComponents with namespace, collection, and name
             
         Returns:
             Path to the document directory
         """
-        document_path = self.base_path / path
+        document_path = self.base_path / components.path
         os.makedirs(document_path, exist_ok=True)
         return document_path
     
-    def write_content(self, path: str, content: str, chunk_num: Optional[int] = None) -> Path:
+    def write_content(self, components: PathComponents, content: str) -> str:
         """Write content to a document file.
         
         Args:
-            path: Document path (namespace/collection/name)
+            components: PathComponents with namespace, collection, name and optional fragment
             content: Content to write
-            chunk_num: Optional chunk number for chunked documents
             
         Returns:
             Path to the written file
         """
-        document_path = self.ensure_directory(path)
+        document_path = self.ensure_directory(components)
         
-        if chunk_num is not None:
-            filename = f"content.{chunk_num:04d}.txt"
-        else:
-            filename = "content.txt"
+        filename = components.get_fragment_name(prefix="content", default="0000", ext="txt")
         
         file_path = document_path / filename
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(content)
         
-        return file_path
+        return filename
     
-    def read_content(self, path: str) -> str:
+    def read_content(self, components: PathComponents) -> str:
         """Read content from a document.
         
         Args:
-            path: Document path (namespace/collection/name)
+            components: PathComponents with namespace, collection, and name
+                        Can include an optional fragment to specify a file
             
         Returns:
             Document content
@@ -158,146 +160,96 @@ class DocumentStore:
         Raises:
             FileNotFoundError: If document doesn't exist
         """
-        document_path = self.base_path / path
+        document_path = self.base_path / components.path
+
+        # If fragment is specified, try to read that specific file
+        if components.fragment:
+            # Check if fragment already has an extension, if not, add .txt
+            if '.' in components.fragment:
+                fragment_filename = components.fragment
+            else:
+                fragment_filename = f"{components.fragment}.txt"
+                
+            fragment_path = document_path / fragment_filename
+            if fragment_path.exists():
+                with open(fragment_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+            else:
+                raise FileNotFoundError(f"Fragment file {fragment_filename} not found for document {components.path}")
         
-        # First try to read content.txt
+        # No fragment or fragment file not found, try standard content files
         content_path = document_path / "content.txt"
         if content_path.exists():
             with open(content_path, 'r', encoding='utf-8') as f:
                 return f.read()
         
-        # If not found, try content.0000.txt (first chunk)
+        # If not found, try content.0000.txt (first fragment)
         chunk_path = document_path / "content.0000.txt"
         if chunk_path.exists():
             with open(chunk_path, 'r', encoding='utf-8') as f:
                 return f.read()
         
-        raise FileNotFoundError(f"Document content not found for path: {path}")
+        raise FileNotFoundError(f"Document content not found for path: {components.path}")
     
-    def read_chunk(self, path: str, chunk_num: int) -> str:
-        """Read a specific chunk from a document.
-        
-        Args:
-            path: Document path (namespace/collection/name)
-            chunk_num: Chunk number to read
-            
-        Returns:
-            Chunk content
-            
-        Raises:
-            FileNotFoundError: If chunk doesn't exist
-        """
-        document_path = self.base_path / path
-        chunk_path = document_path / f"content.{chunk_num:04d}.txt"
-        
-        if not chunk_path.exists():
-            raise FileNotFoundError(f"Chunk {chunk_num} not found for document {path}")
-        
-        with open(chunk_path, 'r', encoding='utf-8') as f:
-            return f.read()
-    
-    def has_next_chunk(self, path: str, chunk_num: int) -> bool:
-        """Check if a document has a next chunk after the given one.
-        
-        Args:
-            path: Document path (namespace/collection/name)
-            chunk_num: Current chunk number
-            
-        Returns:
-            True if next chunk exists, False otherwise
-        """
-        document_path = self.base_path / path
-        next_chunk_path = document_path / f"content.{chunk_num+1:04d}.txt"
-        return next_chunk_path.exists()
-    
-    def has_multiple_chunks(self, path: str) -> bool:
-        """Check if a document has multiple chunks.
-        
-        Args:
-            path: Document path (namespace/collection/name)
-            
-        Returns:
-            True if document has multiple chunks, False otherwise
-        """
-        document_path = self.base_path / path
-        
-        # Check if any content.NNNN.txt files exist where NNNN > 0000
-        for file_path in document_path.glob("content.*.txt"):
-            match = re.search(r'content\.(\d{4})\.txt', file_path.name)
-            if match and int(match.group(1)) > 0:
-                return True
-        
-        return False
-    
-    def chunk_content(self, content: str, max_chunk_size: Optional[int] = None) -> List[str]:
-        """Split content into chunks.
+    def chunk_content(self, content: str, max_fragment_size: Optional[int] = None) -> List[str]:
+        """Split content into fragments.
         
         Args:
             content: Content to split
-            max_chunk_size: Maximum chunk size in characters
+            max_fragment_size: Maximum fragment size in characters
             
         Returns:
             List of content chunks
         """
-        if max_chunk_size is None:
-            max_chunk_size = self.DEFAULT_CHUNK_SIZE
+        if max_fragment_size is None:
+            max_fragment_size = self.DEFAULT_FRAGMENT_SIZE
         
         # Simple character-based chunking
-        chunks = []
-        for i in range(0, len(content), max_chunk_size):
-            chunks.append(content[i:i + max_chunk_size])
+        fragments = []
+        for i in range(0, len(content), max_fragment_size):
+            fragments.append(content[i:i + max_fragment_size])
         
-        return chunks
+        return fragments
     
-    def write_metadata(self, namespace: str, collection: str, name: str, 
-                     metadata: Dict[str, Any], chunks_info: Optional[List[Dict[str, Any]]] = None) -> Path:
-        """Write document metadata file.
+    def write_index(self, components: PathComponents, index: DocumentIndex) -> Path:
+        """Write document index file.
         
         Args:
-            namespace: Document namespace
-            collection: Document collection
-            name: Document name
-            metadata: Document metadata
-            chunks_info: Optional information about chunks
+            components: PathComponents with namespace, collection, and name
+            index: Document index
             
         Returns:
-            Path to the metadata file
+            Path to the index file
         """
-        path = f"{namespace}/{collection}/{name}"
-        document_path = self.ensure_directory(path)
-        metadata_path = document_path / "metadata.json"
+        document_path = self.ensure_directory(components)
+        index_path = document_path / "index.json"
+
+        index_dict = index.model_dump()
         
-        # Create document metadata
-        doc_metadata = DocumentMetadata(
-            namespace=namespace,
-            collection=collection,
-            name=name,
-            **{k: v for k, v in metadata.items() if k not in ['namespace', 'collection', 'name']}
+        # Create document index using components
+        doc_index = DocumentIndex(
+            namespace=components.namespace,
+            collection=components.collection,
+            name=components.name,
+            **{k: v for k, v in index_dict.items() if k not in ['namespace', 'collection', 'name', 'fragments', 'created_at']}
         )
         
-        # Add chunks information if provided
-        if chunks_info:
-            doc_metadata.chunked = True
-            doc_metadata.chunks = [
-                DocumentChunk(
-                    path=f"{path}/content.{chunk['sequence_num']:04d}.txt",
-                    size=chunk['size'],
-                    sequence_num=chunk['sequence_num']
-                )
-                for chunk in chunks_info
-            ]
+        # Add fragments information if provided
+        if index.fragments:
+            doc_index.chunked = True
+            doc_index.fragments = index.fragments
         
-        # Write to metadata file
-        with open(metadata_path, 'w', encoding='utf-8') as f:
-            json.dump(doc_metadata.model_dump(), f, indent=2, default=str)
+        # Write to index file
+        with open(index_path, 'w', encoding='utf-8') as f:
+            json.dump(doc_index.model_dump(), f, indent=2, default=str)
         
-        return metadata_path
+        return index_path
     
-    def read_metadata(self, path: str) -> DocumentMetadata:
-        """Read document metadata file.
+    def read_index(self, components: PathComponents) -> DocumentIndex:
+        """Read document index file.
         
         Args:
-            path: Document path (namespace/collection/name)
+            components: PathComponents with namespace, collection, and name
             
         Returns:
             Document metadata
@@ -305,58 +257,57 @@ class DocumentStore:
         Raises:
             FileNotFoundError: If metadata file doesn't exist
         """
-        document_path = self.base_path / path
-        metadata_path = document_path / "metadata.json"
+        document_path = self.base_path / components.path
+        index_path = document_path / "index.json"
         
-        if not metadata_path.exists():
-            raise FileNotFoundError(f"Metadata file not found for document {path}")
+        if not index_path.exists():
+            raise FileNotFoundError(f"Index file not found for document {components.urn}")
         
-        with open(metadata_path, 'r', encoding='utf-8') as f:
+        with open(index_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
-        # Convert loaded data to DocumentMetadata
-        return DocumentMetadata(**data)
+        # Convert loaded data to DocumentIndex
+        return DocumentIndex(**data)
     
-    def update_metadata(self, path: str, updates: Dict[str, Any]) -> DocumentMetadata:
-        """Update document metadata file.
+    def update_index(self, components: PathComponents, updates: Dict[str, Any]) -> DocumentIndex:
+        """Update document index file.
         
         Args:
-            path: Document path (namespace/collection/name)
+            components: PathComponents with namespace, collection, and name
             updates: Dictionary of fields to update
             
         Returns:
-            Updated document metadata
+            Updated document index
             
         Raises:
-            FileNotFoundError: If metadata file doesn't exist
+            FileNotFoundError: If index file doesn't exist
         """
-        # Read existing metadata
-        metadata = self.read_metadata(path)
+        # Read existing index
+        index = self.read_index(components)
         
         # Update fields
-        metadata_dict = metadata.model_dump()
-        metadata_dict.update(updates)
-        metadata_dict['updated_at'] = datetime.utcnow()
+        index_dict = index.model_dump()
+        index_dict.update(updates)
+        index_dict['updated_at'] = datetime.utcnow()
         
         # Don't allow changing path components through updates
-        metadata_dict['namespace'] = metadata.namespace
-        metadata_dict['collection'] = metadata.collection
-        metadata_dict['name'] = metadata.name
-        
+        index_dict['namespace'] = index.namespace
+        index_dict['collection'] = index.collection
+        index_dict['name'] = index.name
+
         # Write back
-        document_path = self.base_path / path
-        metadata_path = document_path / "metadata.json"
-        with open(metadata_path, 'w', encoding='utf-8') as f:
-            json.dump(metadata_dict, f, indent=2, default=str)
+        document_path = self.base_path / components.path
+        index_path = document_path / "index.json"
+        with open(index_path, 'w', encoding='utf-8') as f:
+            json.dump(index_dict, f, indent=2, default=str)
         
-        return DocumentMetadata(**metadata_dict)
+        return DocumentIndex(**index_dict)
     
-    def find_documents_recursive(self, namespace: Optional[str] = None, collection: Optional[str] = None) -> List[str]:
+    def find_documents_recursive(self, components: PartialPathComponents) -> List[str]:
         """Find all documents recursively under a namespace/collection.
         
         Args:
-            namespace: Optional namespace to filter by
-            collection: Optional collection to filter by (requires namespace)
+            components: PartialPathComponents with namespace, collection, and name
             
         Returns:
             List of document paths
@@ -364,54 +315,152 @@ class DocumentStore:
         search_path = self.base_path
         
         # Build the search path based on provided filters
-        if namespace:
-            search_path = search_path / namespace
-            if collection:
-                search_path = search_path / collection
+        if components.namespace:
+            search_path = search_path / components.namespace
+            if components.collection:
+                search_path = search_path / components.collection
+                if components.name:
+                    search_path = search_path / components.name
         
-        # Search for metadata.json files
+        # Search for index.json files
         documents = []
-        for metadata_file in search_path.glob("**/metadata.json"):
-            doc_path = metadata_file.parent
+        for index_file in search_path.glob("**/index.json"):
+            doc_path = index_file.parent
             relative_path = doc_path.relative_to(self.base_path)
             documents.append(str(relative_path).replace('\\', '/'))
         
         return documents
     
-    def find_documents_shallow(self, namespace: Optional[str] = None, collection: Optional[str] = None) -> List[str]:
-        """Find documents directly under a namespace/collection (non-recursive).
+    def find_documents_shallow(self, components: PartialPathComponents) -> List[str]:
+        """Find documents in the knowledge base (non-recursive).
         
         Args:
-            namespace: Optional namespace to filter by
-            collection: Optional collection to filter by (requires namespace)
+            components: PartialPathComponents with namespace, collection, and name
             
         Returns:
-            List of document paths
+            List of document paths in format namespace/collection/name
         """
-        search_path = self.base_path
+        if components.namespace is None:
+            # List all namespaces (shallow mode)
+            return [d.name for d in self.base_path.iterdir() if d.is_dir()]
         
-        # Build the search path based on provided filters
-        if namespace:
-            search_path = search_path / namespace
-            if collection:
-                search_path = search_path / collection
+        namespace_path = self.base_path / components.namespace
+        if not namespace_path.exists():
+            return []
+            
+        if components.collection is None:
+            # List collections in the namespace
+            return [f"{components.namespace}/{d.name}" for d in namespace_path.iterdir() if d.is_dir()]
         
-        # Define the glob pattern based on filters
-        if namespace and collection:
-            # Looking for documents in a specific collection
-            pattern = "*"
-        elif namespace:
-            # Looking for collections in a namespace
-            pattern = "*/*"
+        collection_path = namespace_path / components.collection
+        if not collection_path.exists():
+            return []
+
+        if components.name is None:
+            # List documents in the collection
+            return [f"{components.namespace}/{components.collection}/{d.name}" for d in collection_path.iterdir() if d.is_dir()]
         else:
-            # Looking for namespaces
-            pattern = "*/*/*"
+            # List documents in the collection/name
+            document_path = collection_path / components.name
+            if not document_path.exists():
+                return []
+            return [f"{components.namespace}/{components.collection}/{components.name}"]
+    
+    def delete_document(self, components: PathComponents) -> None:
+        """Delete a document from the knowledge base.
         
-        # Search for metadata.json files
-        documents = []
-        for metadata_file in search_path.glob(f"{pattern}/metadata.json"):
-            doc_path = metadata_file.parent
-            relative_path = doc_path.relative_to(self.base_path)
-            documents.append(str(relative_path).replace('\\', '/'))
+        Args:
+            components: PathComponents with namespace, collection, and name
+            
+        Raises:
+            FileNotFoundError: If document doesn't exist
+        """
+        document_path = self.base_path / components.path
         
-        return documents
+        if not document_path.exists():
+            raise FileNotFoundError(f"Document not found: {components.urn}")
+        
+        # Delete all files in the document directory
+        for file_path in document_path.glob("*"):
+            file_path.unlink()
+        
+        # Remove the directory
+        document_path.rmdir()
+        
+        # Check if parent directories are empty and remove them if they are
+        collection_path = document_path.parent
+        namespace_path = collection_path.parent
+        
+        # Try to remove collection directory if empty
+        try:
+            if collection_path.exists() and not any(collection_path.iterdir()):
+                collection_path.rmdir()
+                
+                # Try to remove namespace directory if empty
+                if namespace_path.exists() and not any(namespace_path.iterdir()):
+                    namespace_path.rmdir()
+        except OSError:
+            # If we can't remove the directories, that's ok
+            pass
+
+        return None
+    
+    def move_document(self, components: PathComponents, new_components: PathComponents) -> None:
+        """Move a document to a new location.
+        
+        Args:
+            components: PathComponents with namespace, collection, and name
+            new_components: PathComponents with namespace, collection, and name
+        """
+        document_path = self.base_path / components.path
+        new_document_path = self.base_path / new_components.path
+
+        if not document_path.exists():
+            raise FileNotFoundError(f"Document not found: {components.urn}")
+        
+        if new_document_path.exists():
+            raise FileNotFoundError(f"New document path already exists: {new_components.urn}")
+        
+        # Move the document directory
+        shutil.move(document_path, new_document_path)
+
+        # Update the index
+        index = self.read_index(new_components)
+        index.namespace = new_components.namespace
+        index.collection = new_components.collection
+        index.name = new_components.name
+        self.write_index(new_components, index)
+        
+        return None
+        
+
+    def validate_index(self, components: PathComponents) -> None:
+        """Validate the index of a document.
+        
+        Args:
+            components: PathComponents with namespace, collection, and name
+        """
+        document_path = self.base_path / components.path
+        if not document_path.exists():
+            raise FileNotFoundError(f"Document not found: {components.path}")
+        
+        index_path = document_path / "index.json"
+        if not index_path.exists():
+            raise FileNotFoundError(f"Index file not found: {components.path}")
+        
+        # Check if our namespace, collection, and name are correct
+        index = self.read_index(components)
+        if index.namespace != components.namespace:
+            raise ValueError(f"Namespace mismatch: {index.namespace} != {components.namespace}")
+        if index.collection != components.collection:
+            raise ValueError(f"Collection mismatch: {index.collection} != {components.collection}")
+        if index.name != components.name:
+            raise ValueError(f"Name mismatch: {index.name} != {components.name}")
+        
+        # Check if the fragments exist
+        for fragment in index.fragments.keys():
+            fragment_path = document_path / f"content.{fragment}.txt"
+            if not fragment_path.exists():
+                raise FileNotFoundError(f"Fragment file not found: {fragment_path}")
+        
+        return None

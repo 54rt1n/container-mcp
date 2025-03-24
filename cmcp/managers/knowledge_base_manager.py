@@ -1,12 +1,18 @@
+# cmcp/managers/knowledge_base_manager.py
+# container-mcp © 2025 by Martin Bukowski is licensed under Apache 2.0
+
 """Knowledge base manager for CMCP."""
 
 import os
-from typing import Dict, List, Any, Optional, Tuple
+import re
+from typing import Dict, List, Any, Optional, Tuple, NamedTuple
+from datetime import datetime
 import logging
 from pathlib import Path
 
 from cmcp.kb.document_store import DocumentStore
-from cmcp.kb.models import DocumentMetadata
+from cmcp.kb.models import DocumentIndex, ImplicitRDFTriple, DocumentFragment
+from cmcp.kb.path import PathComponents, PartialPathComponents
 
 
 class KnowledgeBaseManager:
@@ -32,6 +38,15 @@ class KnowledgeBaseManager:
         storage_path = os.environ.get("CMCP_KB_STORAGE_PATH")
         return cls(storage_path)
     
+    def check_initialized(self) -> None:
+        """Check if the knowledge base manager is initialized.
+        
+        Raises:
+            RuntimeError: If the knowledge base manager is not initialized
+        """
+        if self.document_store is None:
+            raise RuntimeError("Knowledge base manager not initialized. Call initialize() first.")
+    
     async def initialize(self) -> None:
         """Initialize the knowledge base manager.
         
@@ -41,238 +56,125 @@ class KnowledgeBaseManager:
             self.document_store = DocumentStore(self.storage_path)
             self.logger.info(f"Initialized knowledge base at: {self.storage_path}")
     
-    def fix_path(self, path: str) -> str:
-        """Remove any kb prefix ('kb:', 'kb:/', 'kb://', etc.) from path if present.
+    async def write_content(self, components: PathComponents, content: str) -> DocumentIndex:
+        """Write content to a document in the knowledge base.
         
         Args:
-            path: The path to fix
-            
-        Returns:
-            Path with kb prefix removed
-        """
-        if not path:
-            return path
-            
-        if path.startswith("kb:"):
-            # Remove the "kb:" prefix
-            clean_path = path[3:]
-        else:
-            clean_path = path
-            
-        # Remove any leading slashes to prevent accessing the root filesystem
-        while clean_path and clean_path.startswith("/"):
-            clean_path = clean_path[1:]
-            
-        return clean_path
-    
-    async def write_document(self, content: str, 
-                          namespace: Optional[str] = None, 
-                          collection: Optional[str] = None, 
-                          name: Optional[str] = None, 
-                          metadata: Optional[Dict[str, Any]] = None) -> str:
-        """Write a document to the knowledge base.
-        
-        Args:
+            components: PathComponents with namespace, collection, and name
             content: Document content
-            namespace: Document namespace (default: "documents")
-            collection: Document collection (default: "general")
-            name: Document name (if None, one will be generated)
-            metadata: Optional document metadata
             
         Returns:
-            Document path (namespace/collection/name)
+            Updated document index
             
         Raises:
             RuntimeError: If the knowledge base manager is not initialized
         """
-        if self.document_store is None:
-            raise RuntimeError("Knowledge base manager not initialized. Call initialize() first.")
-        
-        # Handle metadata
-        metadata = metadata or {}
-        
-        # Get or generate namespace, collection, and name
-        namespace = namespace or metadata.get('namespace', 'documents')
-        collection = collection or metadata.get('collection', 'general')
-        
-        # Generate name if not provided
-        if not name:
-            title = metadata.get('title')
-            name = self.document_store.generate_name(title)
-        
-        # Construct the document path
-        doc_path = f"{namespace}/{collection}/{name}"
-        
+        self.check_initialized()
+            
         # Check if content needs chunking (simple size-based approach)
-        if len(content) > self.document_store.DEFAULT_CHUNK_SIZE:
+        if len(content) > self.document_store.DEFAULT_FRAGMENT_SIZE:
+
+            if components.fragment:
+                raise ValueError(f"Cannot chunk content for {components.urn} because it is a fragment")
+
             chunks = self.document_store.chunk_content(content)
             
             # Write each chunk
-            chunks_info = []
+            fragments : Dict[str, DocumentFragment] = {}
             for i, chunk in enumerate(chunks):
-                self.document_store.write_content(doc_path, chunk, i)
-                chunks_info.append({
-                    "sequence_num": i,
-                    "size": len(chunk)
-                })
+                fragment_component = components.copy()
+                fragment_component.fragment = f"{i:04d}"    
+                filename = self.document_store.write_content(fragment_component, chunk)
+                fragments[filename] = DocumentFragment(
+                    sequence_num=i,
+                    size=len(chunk)
+                )
             
-            # Write metadata with chunks info
-            self.document_store.write_metadata(namespace, collection, name, metadata, chunks_info)
+            # Update metadata with chunks info
+            try:
+                # Try to read existing metadata
+                existing_index = self.document_store.read_index(components)
+                # Update with chunks info
+                self.document_store.update_index(components, {"chunked": True, "fragments": fragments})
+            except FileNotFoundError:
+                # Index doesn't exist yet, this needs to error
+                raise ValueError(f"Document index not found: {components.urn}")
+
         else:
             # Write single content file
-            self.document_store.write_content(doc_path, content)
-            
-            # Write metadata
-            self.document_store.write_metadata(namespace, collection, name, metadata)
+            self.document_store.write_content(components, content)
         
-        return doc_path
+        existing_index = self.document_store.read_index(components)
+        
+        return existing_index
     
-    async def read_document(self, path: str, chunk_num: Optional[int] = None) -> Dict[str, Any]:
-        """Read a document from the knowledge base.
+    async def update_metadata(self,
+                           components: PathComponents,
+                           metadata: Dict[str, Any]) -> DocumentIndex:
+        """Update metadata for a document in the knowledge base.
         
         Args:
-            path: Document path (namespace/collection/name)
-            chunk_num: Optional specific chunk number to read
-            
+            components: PathComponents with namespace, collection, and name
+            metadata: Document metadata to update
+
         Returns:
-            Dictionary with document content, metadata, and optional nextChunkNum
+            Updated document index
             
         Raises:
             RuntimeError: If the knowledge base manager is not initialized
             FileNotFoundError: If the document doesn't exist
         """
-        if self.document_store is None:
-            raise RuntimeError("Knowledge base manager not initialized. Call initialize() first.")
+        self.check_initialized()
         
-        # Fix path by removing kb:// prefix if present
-        path = self.fix_path(path)
-        
-        # Read document metadata
+        # Check if document exists
         try:
-            metadata = self.document_store.read_metadata(path)
+            current_index = self.document_store.read_index(components)
         except FileNotFoundError:
-            raise FileNotFoundError(f"Document not found: {path}")
-        except Exception as e:
-            raise e
+            raise FileNotFoundError(f"Document not found: {components.urn}")
         
-        result = {
-            "metadata": metadata.model_dump(),
-        }
+        # Update metadata
+        current_index.metadata.update(metadata)
         
-        # Read content based on whether a specific chunk is requested
-        if chunk_num is not None:
-            # Read specific chunk
-            content = self.document_store.read_chunk(path, chunk_num)
-            result["content"] = content
-            
-            # Check if there's a next chunk
-            if self.document_store.has_next_chunk(path, chunk_num):
-                result["nextChunkNum"] = chunk_num + 1
-        else:
-            # Read main content
-            content = self.document_store.read_content(path)
-            result["content"] = content
-            
-            # Check if there are multiple chunks
-            if self.document_store.has_multiple_chunks(path):
-                result["nextChunkNum"] = 1
+        # Update index
+        self.document_store.update_index(components, {"metadata": current_index.metadata})
         
-        return result
+        return current_index
     
-    async def add_rdf(self, path: str, triples: List[Tuple[str, str, str]]) -> Dict[str, Any]:
-        """Add RDF triples to a document.
+    async def read_content(self, components: PathComponents) -> Optional[str]:
+        """Read content from a document in the knowledge base.
         
         Args:
-            path: Document path (namespace/collection/name)
-            triples: List of RDF triples to add
-            
+            components: PathComponents with namespace, collection, name and optional fragment
+
         Returns:
-            Dictionary with status and updated triple count
+            Document content or None if the content doesn't exist
             
         Raises:
             RuntimeError: If the knowledge base manager is not initialized
-            FileNotFoundError: If the document doesn't exist
+            FileNotFoundError: If the document metadata doesn't exist
         """
-        if self.document_store is None:
-            raise RuntimeError("Knowledge base manager not initialized. Call initialize() first.")
+        self.check_initialized()
         
-        # Fix path by removing kb:// prefix if present
-        path = self.fix_path(path)
-        
-        # Read document metadata
+        # First check if index exists
         try:
-            metadata = self.document_store.read_metadata(path)
+            current_index = self.document_store.read_index(components)
         except FileNotFoundError:
-            raise FileNotFoundError(f"Document not found: {path}")
+            raise FileNotFoundError(f"Document not found: {components.urn}")
         
-        # Get existing triples
-        existing_triples = metadata.rdf_triples
-        
-        # Add new triples (avoid duplicates)
-        updated_triples = list(existing_triples)
-        for triple in triples:
-            if triple not in updated_triples:
-                updated_triples.append(triple)
-        
-        # Update the metadata
-        updated_metadata = self.document_store.update_metadata(
-            path, {"rdf_triples": updated_triples}
-        )
-        
-        return {
-            "status": "updated",
-            "triple_count": len(updated_metadata.rdf_triples)
-        }
-    
-    async def remove_rdf(self, path: str, triples: Optional[List[Tuple[str, str, str]]] = None) -> Dict[str, Any]:
-        """Remove RDF triples from a document.
-        
-        Args:
-            path: Document path (namespace/collection/name)
-            triples: Specific triples to remove (if None, removes all triples)
-            
-        Returns:
-            Dictionary with status and remaining triple count
-            
-        Raises:
-            RuntimeError: If the knowledge base manager is not initialized
-            FileNotFoundError: If the document doesn't exist
-        """
-        if self.document_store is None:
-            raise RuntimeError("Knowledge base manager not initialized. Call initialize() first.")
-        
-        # Fix path by removing kb:// prefix if present
-        path = self.fix_path(path)
-        
-        # Read document metadata
+        # Try to read content
         try:
-            metadata = self.document_store.read_metadata(path)
+            content = self.document_store.read_content(components)
+            return content
         except FileNotFoundError:
-            raise FileNotFoundError(f"Document not found: {path}")
-        
-        if triples is None:
-            # Remove all triples
-            updated_triples = []
-        else:
-            # Remove specific triples
-            updated_triples = [t for t in metadata.rdf_triples if t not in triples]
-        
-        # Update the metadata
-        updated_metadata = self.document_store.update_metadata(
-            path, {"rdf_triples": updated_triples}
-        )
-        
-        return {
-            "status": "updated",
-            "triple_count": len(updated_metadata.rdf_triples)
-        }
+            # Content doesn't exist, but index does
+            return None
     
-    async def add_preference(self, path: str, triples: List[Tuple[str, str, str]]) -> Dict[str, Any]:
+    async def add_preference(self, components: PathComponents, preferences: List[ImplicitRDFTriple]) -> Dict[str, Any]:
         """Add preference triples to a document.
         
         Args:
-            path: Document path (namespace/collection/name)
-            triples: List of RDF triples to add as preferences
+            components: PathComponents with namespace, collection, and name
+            preferences: List of RDF predicate-object pairs to add as preferences
             
         Returns:
             Dictionary with status and updated preference count
@@ -281,43 +183,37 @@ class KnowledgeBaseManager:
             RuntimeError: If the knowledge base manager is not initialized
             FileNotFoundError: If the document doesn't exist
         """
-        if self.document_store is None:
-            raise RuntimeError("Knowledge base manager not initialized. Call initialize() first.")
-        
-        # Fix path by removing kb:// prefix if present
-        path = self.fix_path(path)
+        self.check_initialized()
         
         # Read document metadata
         try:
-            metadata = self.document_store.read_metadata(path)
+            index = self.document_store.read_index(components)
         except FileNotFoundError:
-            raise FileNotFoundError(f"Document not found: {path}")
+            raise FileNotFoundError(f"Document not found: {components.urn}")
         
         # Get existing preferences
-        existing_preferences = metadata.preferences
+        updated_preferences = list(index.preferences)
         
-        # Add new preferences (avoid duplicates)
-        updated_preferences = list(existing_preferences)
-        for triple in triples:
-            if triple not in updated_preferences:
-                updated_preferences.append(triple)
+        for preference in preferences:
+            if preference not in updated_preferences:
+                updated_preferences.append(preference)
         
         # Update the metadata
-        updated_metadata = self.document_store.update_metadata(
-            path, {"preferences": updated_preferences}
+        updated_index = self.document_store.update_index(
+            components, {"preferences": updated_preferences}
         )
         
         return {
             "status": "updated",
-            "preference_count": len(updated_metadata.preferences)
+            "preference_count": len(updated_index.preferences)
         }
     
-    async def remove_preference(self, path: str, triples: Optional[List[Tuple[str, str, str]]] = None) -> Dict[str, Any]:
+    async def remove_preference(self, components: PathComponents, preferences: List[ImplicitRDFTriple]) -> Dict[str, Any]:
         """Remove preference triples from a document.
         
         Args:
-            path: Document path (namespace/collection/name)
-            triples: Specific triples to remove (if None, removes all preferences)
+            components: PathComponents with namespace, collection, and name
+            preferences: Specific triples to remove (if None, removes all preferences)
             
         Returns:
             Dictionary with status and remaining preference count
@@ -326,46 +222,55 @@ class KnowledgeBaseManager:
             RuntimeError: If the knowledge base manager is not initialized
             FileNotFoundError: If the document doesn't exist
         """
-        if self.document_store is None:
-            raise RuntimeError("Knowledge base manager not initialized. Call initialize() first.")
-        
-        # Fix path by removing kb:// prefix if present
-        path = self.fix_path(path)
+        self.check_initialized()
         
         # Read document metadata
         try:
-            metadata = self.document_store.read_metadata(path)
+            index = self.document_store.read_index(components)
         except FileNotFoundError:
-            raise FileNotFoundError(f"Document not found: {path}")
+            raise FileNotFoundError(f"Document not found: {components.urn}")
         
-        if triples is None:
-            # Remove all preferences
-            updated_preferences = []
-        else:
-            # Remove specific preferences
-            updated_preferences = [t for t in metadata.preferences if t not in triples]
+        # Current preferences
+        current_preferences = index.preferences
         
-        # Update the metadata
-        updated_metadata = self.document_store.update_metadata(
-            path, {"preferences": updated_preferences}
+        # Filter out the preferences to remove
+        updated_preferences = [p for p in current_preferences if p not in preferences]
+        
+        # Update the index
+        updated_index = self.document_store.update_index(
+            components, {"preferences": updated_preferences}
         )
         
         return {
             "status": "updated",
-            "preference_count": len(updated_metadata.preferences)
+            "preference_count": len(updated_index.preferences)
         }
     
-    async def add_reference(self, path: str, ref_namespace: str = None, ref_collection: str = None, 
-                          ref_name: str = None, relation: str = None, ref_path: str = None) -> Dict[str, Any]:
+    async def remove_all_preferences(self, components: PathComponents) -> Dict[str, Any]:
+        """Remove all preference triples from a document.
+        
+        Args:
+            components: PathComponents with namespace, collection, and name
+            
+        Returns:
+            Dictionary with status and remaining preference count
+            
+        Raises:
+            RuntimeError: If the knowledge base manager is not initialized
+            FileNotFoundError: If the document doesn't exist
+        """
+        return await self.remove_preference(components, None)
+    
+    async def add_reference(self, 
+                          components: PathComponents,
+                          ref_components: PathComponents,
+                          relation: str) -> Dict[str, Any]:
         """Add a reference to another document.
         
         Args:
-            path: Document path (namespace/collection/name)
-            ref_namespace: Referenced document namespace (if not using ref_path)
-            ref_collection: Referenced document collection (if not using ref_path)
-            ref_name: Referenced document name (if not using ref_path)
+            components: PathComponents with namespace, collection, and name
+            ref_components: PathComponents with namespace, collection, and name
             relation: Relation predicate
-            ref_path: Referenced document path (namespace/collection/name), alternative to namespace/collection/name
             
         Returns:
             Dictionary with status and updated reference count
@@ -373,43 +278,27 @@ class KnowledgeBaseManager:
         Raises:
             RuntimeError: If the knowledge base manager is not initialized
             FileNotFoundError: If source or referenced document doesn't exist
-            ValueError: If neither ref_path nor ref_namespace/collection/name are provided
         """
-        if self.document_store is None:
-            raise RuntimeError("Knowledge base manager not initialized. Call initialize() first.")
-        
-        # Fix paths by removing kb:// prefix if present
-        path = self.fix_path(path)
-        
-        # Build the reference path from either ref_path or components
-        if ref_path:
-            resolved_ref_path = self.fix_path(ref_path)
-        elif ref_namespace and ref_collection and ref_name:
-            resolved_ref_path = f"{ref_namespace}/{ref_collection}/{ref_name}"
-        else:
-            raise ValueError("Either ref_path or ref_namespace/collection/name must be provided")
-        
-        # Ensure relation is provided
-        if not relation:
-            raise ValueError("Relation predicate must be provided")
+        self.check_initialized()
         
         # Read document metadata for source document
         try:
-            metadata = self.document_store.read_metadata(path)
+            index = self.document_store.read_index(components)
         except FileNotFoundError:
-            raise FileNotFoundError(f"Source document not found: {path}")
+            raise FileNotFoundError(f"Source document not found: {components.urn}")
         
         # Check if referenced document exists
         try:
-            self.document_store.read_metadata(resolved_ref_path)
+            self.document_store.read_index(ref_components)
         except FileNotFoundError:
-            raise FileNotFoundError(f"Referenced document not found: {resolved_ref_path}")
+            raise FileNotFoundError(f"Referenced document not found: {ref_components.urn}")
         
-        # Create the reference triple
-        reference = (f"kb://{path}", relation, f"kb://{resolved_ref_path}")
+        # Create the reference as ImplicitRDFTriple
+        # The predicate is the relation, the object is the referenced document URN
+        reference = ImplicitRDFTriple(predicate=relation, object=ref_components.urn)
         
         # Get existing references
-        existing_references = metadata.references
+        existing_references = index.references
         
         # Add new reference if not already present
         updated_references = list(existing_references)
@@ -417,27 +306,25 @@ class KnowledgeBaseManager:
             updated_references.append(reference)
         
         # Update the metadata
-        updated_metadata = self.document_store.update_metadata(
-            path, {"references": updated_references}
+        updated_index = self.document_store.update_index(
+            components, {"references": updated_references}
         )
         
         return {
             "status": "updated",
-            "reference_count": len(updated_metadata.references)
+            "reference_count": len(updated_index.references)
         }
     
-    async def remove_reference(self, path: str, ref_namespace: Optional[str] = None, 
-                             ref_collection: Optional[str] = None, ref_name: Optional[str] = None,
-                             relation: Optional[str] = None, ref_path: Optional[str] = None) -> Dict[str, Any]:
-        """Remove references from a document, optionally filtering by attributes.
+    async def remove_reference(self, 
+                            components: PathComponents,
+                            ref_components: PathComponents,
+                            relation: str) -> Dict[str, Any]:
+        """Remove references from a document matching the specified attributes.
         
         Args:
-            path: Document path (namespace/collection/name)
-            ref_namespace: Optional referenced document namespace filter
-            ref_collection: Optional referenced document collection filter
-            ref_name: Optional referenced document name filter
-            relation: Optional relation predicate filter
-            ref_path: Optional complete reference path to filter by
+            components: PathComponents with namespace, collection, and name
+            ref_components: PathComponents with namespace, collection, and name
+            relation: Relation predicate
             
         Returns:
             Dictionary with status and remaining reference count
@@ -446,72 +333,40 @@ class KnowledgeBaseManager:
             RuntimeError: If the knowledge base manager is not initialized
             FileNotFoundError: If document doesn't exist
         """
-        if self.document_store is None:
-            raise RuntimeError("Knowledge base manager not initialized. Call initialize() first.")
-        
-        # Fix path by removing kb:// prefix if present
-        path = self.fix_path(path)
-        if ref_path:
-            ref_path = self.fix_path(ref_path)
+        self.check_initialized()
         
         # Read document metadata
         try:
-            metadata = self.document_store.read_metadata(path)
+            index = self.document_store.read_index(components)
         except FileNotFoundError:
-            raise FileNotFoundError(f"Document not found: {path}")
+            raise FileNotFoundError(f"Document not found: {components.urn}")
         
         # Get existing references
-        references = metadata.references
+        references = index.references
         
-        if not any([ref_namespace, ref_collection, ref_name, relation, ref_path]):
-            # No filters provided, remove all references
-            updated_references = []
-        else:
-            # Filter references to remove
-            updated_references = []
-            for ref in references:
-                should_keep = True
-                subject, pred, obj = ref
-                
-                # If relation filter is provided and matches, mark for removal
-                if relation and pred == relation:
-                    should_keep = False
-                
-                # If ref_path is provided, check for exact match
-                if ref_path and obj == f"kb://{ref_path}":
-                    should_keep = False
-                # Otherwise, check component filters
-                elif ref_namespace or ref_collection or ref_name:
-                    ref_path_from_obj = obj.replace("kb://", "")
-                    ref_parts = ref_path_from_obj.split("/")
-                    if len(ref_parts) >= 3:
-                        if (ref_namespace and ref_parts[0] == ref_namespace) or \
-                           (ref_collection and ref_parts[1] == ref_collection) or \
-                           (ref_name and ref_parts[2] == ref_name):
-                            should_keep = False
-                
-                if should_keep:
-                    updated_references.append(ref)
+        # Create the reference as ImplicitRDFTriple to remove
+        target_ref = ImplicitRDFTriple(predicate=relation, object=ref_components.urn)
+        
+        # Filter references to remove the specified one
+        updated_references = [ref for ref in references if ref != target_ref]
         
         # Update the metadata
-        updated_metadata = self.document_store.update_metadata(
-            path, {"references": updated_references}
+        updated_index = self.document_store.update_index(
+            components, {"references": updated_references}
         )
         
         return {
             "status": "updated",
-            "reference_count": len(updated_metadata.references)
+            "reference_count": len(updated_index.references)
         }
     
     async def list_documents(self, 
-                           namespace: Optional[str] = None, 
-                           collection: Optional[str] = None,
+                           components: Optional[PartialPathComponents] = None,
                            recursive: bool = True) -> List[str]:
         """List documents in the knowledge base.
         
         Args:
-            namespace: Optional namespace to filter by
-            collection: Optional collection to filter by (requires namespace)
+            components: Optional PartialPathComponents to filter by
             recursive: Whether to list recursively
             
         Returns:
@@ -520,68 +375,161 @@ class KnowledgeBaseManager:
         Raises:
             RuntimeError: If the knowledge base manager is not initialized
         """
-        if self.document_store is None:
-            raise RuntimeError("Knowledge base manager not initialized. Call initialize() first.")
+        self.check_initialized()
         
-        # Handle special case where path is just 'kb:'
-        if namespace == '' or namespace is True:
-            namespace = None
+        if components is None:
+            components = PartialPathComponents()
         
         # List documents using the document store
         if recursive:
-            return self.document_store.find_documents_recursive(namespace, collection)
+            return self.document_store.find_documents_recursive(components)
         else:
-            return self.document_store.find_documents_shallow(namespace, collection)
+            return self.document_store.find_documents_shallow(components)
     
     async def move_document(self, 
-                          current_path: str, 
-                          new_namespace: Optional[str] = None, 
-                          new_collection: Optional[str] = None, 
-                          new_name: Optional[str] = None) -> str:
+                          components: PathComponents,
+                          new_components: PathComponents) -> DocumentIndex:
         """Move a document to a new location.
         
         Args:
-            current_path: Current document path
-            new_namespace: New namespace (if None, keeps current)
-            new_collection: New collection (if None, keeps current)
-            new_name: New name (if None, keeps current)
+            components: Current document components
+            new_components: New document components
             
         Returns:
-            New document path
+            New document index
             
         Raises:
             RuntimeError: If the knowledge base manager is not initialized
             FileNotFoundError: If the document doesn't exist
         """
-        if self.document_store is None:
-            raise RuntimeError("Knowledge base manager not initialized. Call initialize() first.")
-        
-        # Fix path
-        current_path = self.fix_path(current_path)
+        self.check_initialized()
         
         # Read document data
         try:
-            metadata = self.document_store.read_metadata(current_path)
-            content = self.document_store.read_content(current_path)
+            index = self.document_store.read_index(components)
+            #self.document_store.validate_index(new_components)
         except FileNotFoundError:
-            raise FileNotFoundError(f"Document not found: {current_path}")
+            raise FileNotFoundError(f"Document not found: {components.urn}")
+
+        # We need to move the folder from the old path to the new path, and then rewrite the index
+        self.document_store.move_document(components, new_components)
         
-        # Get new path components, defaulting to current ones if not specified
-        new_namespace = new_namespace or metadata.namespace
-        new_collection = new_collection or metadata.collection
-        new_name = new_name or metadata.name
+        self.logger.info(f"Moved document: {components.path} → {new_components.path}")
         
-        # Write document to new location
-        new_path = await self.write_document(
-            content=content,
-            namespace=new_namespace,
-            collection=new_collection,
-            name=new_name,
-            metadata=metadata.metadata
+        return index
+        
+    async def delete_document(self,
+                           components: PathComponents) -> Dict[str, Any]:
+        """Delete a document from the knowledge base.
+        
+        Args:
+            components: PathComponents with namespace, collection, and name
+            
+        Returns:
+            Dictionary with status and deleted path
+            
+        Raises:
+            RuntimeError: If the knowledge base manager is not initialized
+            FileNotFoundError: If the document doesn't exist
+        """
+        self.check_initialized()
+        
+        # Check if document exists
+        try:
+            self.document_store.read_index(components)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Document not found: {components.urn}")
+        
+        # Delete document files
+        self.document_store.delete_document(components)
+        
+        self.logger.info(f"Deleted document: {components.path}")
+        
+        return {
+            "status": "deleted",
+            "path": components.path,
+            "urn": components.urn
+        }
+    
+    async def create_document(self,
+                          components: PathComponents,
+                          metadata: Optional[Dict[str, Any]] = None) -> DocumentIndex:
+        """Create a new document with metadata but no content.
+        
+        This is part of a two-step process for document creation:
+        1. Create document with metadata
+        2. Write content separately
+        
+        This approach prevents wasting tokens if document creation fails.
+        
+        Args:
+            components: PathComponents with namespace, collection, and name
+            metadata: Optional document metadata
+            
+        Returns:
+            Document path (namespace/collection/name)
+            
+        Raises:
+            RuntimeError: If the knowledge base manager is not initialized
+            ValueError: If content already exists at the path
+        """
+        self.check_initialized()
+        
+        # Check if content already exists
+        document_path_obj = self.document_store.base_path / components.path
+        content_path = document_path_obj / "content.txt"
+        chunk_path = document_path_obj / "content.0000.txt"
+        
+        if content_path.exists() or chunk_path.exists():
+            raise ValueError(f"Content already exists at path: {components.path}")
+        
+        # Initialize empty metadata
+        metadata_dict = metadata or {}
+
+        # Create index
+        index = DocumentIndex(
+            namespace=components.namespace,
+            collection=components.collection,
+            name=components.name,
+            type="document",
+            subtype="text",
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+            content_type="text/plain",
+            chunked=False,
+            fragments={},
+            preferences=[],
+            references=[],
+            indices=[],
+            metadata=metadata_dict
         )
         
-        # TODO: Optionally delete the old document
+        # Create directory structure and write metadata
+        self.document_store.write_index(components, index)
         
-        self.logger.info(f"Moved document: {current_path} → {new_path}")
+        return index
+    
+    async def read_document(self, components: PathComponents) -> DocumentIndex:
+        """Read a document from the knowledge base.
         
-        return new_path
+        Args:
+            components: PathComponents with namespace, collection, and name
+            
+        Returns:
+            DocumentIndex
+            
+        Raises:
+            RuntimeError: If the knowledge base manager is not initialized
+            FileNotFoundError: If the document doesn't exist
+        """
+        self.check_initialized()
+        
+        try:
+            # Read document metadata
+            index = self.document_store.read_index(components)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Document not found: {components.urn}")
+        except Exception as e:
+            raise e
+        
+        return index

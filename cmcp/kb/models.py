@@ -1,19 +1,32 @@
+# cmcp/kb/models.py
+# container-mcp © 2025 by Martin Bukowski is licensed under Apache 2.0
+
 """Pydantic models for the knowledge base document store."""
 
 from datetime import datetime
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, NamedTuple, Dict, Any
 from pydantic import BaseModel, Field
 
-
-class DocumentChunk(BaseModel):
-    """Represents a chunk of a document content."""
+class DocumentFragment(BaseModel):
+    """Represents a fragment of a document content."""
     
-    path: str = Field(..., description="Path identifier for this chunk")
-    size: int = Field(..., description="Size of the chunk in bytes")
-    sequence_num: int = Field(..., description="Sequence number of the chunk")
+    size: int = Field(..., description="Size of the fragment in bytes")
+    sequence_num: int = Field(..., description="Sequence number of the fragment")
 
+class RDFTriple(NamedTuple):
+    """Represents a triple of an RDF graph."""
+    
+    subject: str
+    predicate: str
+    object: str
 
-class DocumentMetadata(BaseModel):
+class ImplicitRDFTriple(NamedTuple):
+    """Represents an implicit triple of an RDF graph, where the subject is the document."""
+    
+    predicate: str
+    object: str
+
+class DocumentIndex(BaseModel):
     """Represents metadata for a knowledge base document."""
     
     namespace: str = Field("documents", description="Top-level category for the document")
@@ -24,17 +37,17 @@ class DocumentMetadata(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
     updated_at: datetime = Field(default_factory=datetime.utcnow, description="Last update timestamp")
     content_type: str = Field("text/plain", description="MIME type of the content")
-    chunked: bool = Field(False, description="Whether the document is split into chunks")
-    chunks: List[DocumentChunk] = Field(default_factory=list, description="List of chunks if document is chunked")
-    preferences: List[Tuple[str, str, str]] = Field(
+    chunked: bool = Field(False, description="Whether the document is split into fragments")
+    fragments: Dict[str, DocumentFragment] = Field(default_factory=dict, description="A dictionary of filename -> fragment information")
+    preferences: List[ImplicitRDFTriple] = Field(
         default_factory=list, 
         description="RDF triples associated with the document"
     )
-    references: List[Tuple[str, str, str]] = Field(
+    references: List[ImplicitRDFTriple] = Field(
         default_factory=list, 
         description="References to other documents"
     )
-    indices: List[Tuple[str, str, str]] = Field(
+    indices: List[ImplicitRDFTriple] = Field(
         default_factory=list, 
         description="Indexing triples for the document"
     )
@@ -42,8 +55,3 @@ class DocumentMetadata(BaseModel):
         default_factory=dict, 
         description="Additional custom metadata for the document"
     )
-    
-    @property
-    def path(self) -> str:
-        """Get the full path of the document."""
-        return f"{self.namespace}/{self.collection}/{self.name}"
