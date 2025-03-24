@@ -9,9 +9,12 @@ import time
 
 from mcp.server.fastmcp import FastMCP
 from cmcp.managers.knowledge_base_manager import KnowledgeBaseManager
-from cmcp.kb.path import PathComponents
-from cmcp.kb.models import DocumentMetadata, ImplicitRDFTriple
+from cmcp.kb.path import PathComponents, PartialPathComponents
+from cmcp.kb.models import DocumentIndex, ImplicitRDFTriple
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 def create_kb_tools(mcp: FastMCP) -> None:
     """Create and register knowledge base tools.
@@ -34,85 +37,33 @@ def create_kb_tools(mcp: FastMCP) -> None:
             metadata: Optional document metadata (default: {})
             
         Returns:
-            Dictionary with document location and status
+            Dictionary with document index
         """
         kb_manager = KnowledgeBaseManager.from_env()
         await kb_manager.initialize()
         
         try:
             # Parse the path to get components
-            components = await PathComponents.parse_path(path)
+            components = PathComponents.parse_path(path)
             
             # Use default empty metadata if not provided
             if metadata is None:
                 metadata = {}
             
             # Create document with metadata only
-            document_path = await kb_manager.create_document(
+            index = await kb_manager.create_document(
                 components=components,
                 metadata=metadata
             )
             
-            # Parse the generated path to get the components
-            result_components = await PathComponents.parse_path(document_path)
-            
-            return {
-                "path": result_components.path,
-                "urn": result_components.urn,
-                "namespace": result_components.namespace,
-                "collection": result_components.collection,
-                "name": result_components.name,
-                "status": "created",
-                "message": "Document created successfully. Use kb_write_content to add content."
-            }
+            return index.model_dump()
         except ValueError as e:
             return {
                 "status": "error",
                 "error": str(e)
             }
-    
-    @mcp.tool()
-    async def kb_update_document(path: str,
-                              content: Optional[str] = None,
-                              metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Write a document to the knowledge base at a specific path.
-        
-        Args:
-            path: Document path in format "namespace/collection[/subcollection]*/name"
-            content: Optional document content
-            metadata: Optional document metadata
-            
-        Returns:
-            Dictionary with document location and status
-        """
-        kb_manager = KnowledgeBaseManager.from_env()
-        await kb_manager.initialize()
-        
-        try:
-            # Parse the path to get components
-            components = await PathComponents.parse_path(path)
-            
-            # Write document with the components
-            document_path = await kb_manager.write_document(
-                content,
-                namespace=components.namespace,
-                collection=components.collection,
-                name=components.name,
-                metadata=metadata
-            )
-            
-            # Get the final components
-            result_components = await PathComponents.parse_path(document_path)
-            
-            return {
-                "path": result_components.path,
-                "urn": result_components.urn,
-                "namespace": result_components.namespace,
-                "collection": result_components.collection,
-                "name": result_components.name,
-                "status": "stored"
-            }
-        except ValueError as e:
+        except Exception as e:
+            logger.error(f"Error creating document at {path}: {e}", exc_info=True, stack_info=True)
             return {
                 "status": "error",
                 "error": str(e)
@@ -141,52 +92,42 @@ def create_kb_tools(mcp: FastMCP) -> None:
         
         try:
             # Parse the path to get components
-            components = await PathComponents.parse_path(path)
+            components = PathComponents.parse_path(path)
             
-            # Check if document exists (metadata must exist)
-            try:
-                # Only check if metadata exists, not content
-                kb_manager.document_store.read_metadata(components)
-            except FileNotFoundError:
+            # Check if document exists (index must exist)
+            if not await kb_manager.check_index(components):
                 return {
                     "status": "error",
                     "error": f"Document not found: {path}. Create it first using kb_create_document."
                 }
             
-            # Check if content already exists using the read_content method
-            existing_content = await kb_manager.read_content(components)
-            
-            if existing_content is not None and not force:
+            # Check if content already exists using the check_content method
+            if await kb_manager.check_content(components) and not force:
                 return {
                     "status": "error",
                     "error": f"Content already exists at path: {components.urn}. Use force=True to overwrite existing content."
                 }
             
             # Write content with the components
-            document_path = await kb_manager.write_content(
-                content,
-                namespace=components.namespace,
-                collection=components.collection,
-                name=components.name
+            index = await kb_manager.write_content(
+                components=components,
+                content=content
             )
+
+            return index.model_dump()
             
-            # Get the final components
-            result_components = await PathComponents.parse_path(document_path)
-            
-            return {
-                "path": result_components.path,
-                "urn": result_components.urn,
-                "namespace": result_components.namespace,
-                "collection": result_components.collection,
-                "name": result_components.name,
-                "status": "content_updated"
-            }
         except ValueError as e:
             return {
                 "status": "error",
                 "error": str(e)
             }
         except FileNotFoundError as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+        except Exception as e:
+            logger.error(f"Error writing content to {path}: {e}", exc_info=True, stack_info=True)
             return {
                 "status": "error",
                 "error": str(e)
@@ -209,27 +150,15 @@ def create_kb_tools(mcp: FastMCP) -> None:
         
         try:
             # Parse the path to get components
-            components = await PathComponents.parse_path(path)
+            components = PathComponents.parse_path(path)
             
             # Update metadata with the components
-            document_path = await kb_manager.update_metadata(
-                namespace=components.namespace,
-                collection=components.collection,
-                name=components.name,
+            index = await kb_manager.update_metadata(
+                components=components,
                 metadata=metadata
             )
             
-            # Get the final components
-            result_components = await PathComponents.parse_path(document_path)
-            
-            return {
-                "path": result_components.path,
-                "urn": result_components.urn,
-                "namespace": result_components.namespace,
-                "collection": result_components.collection,
-                "name": result_components.name,
-                "status": "metadata_updated"
-            }
+            return index.model_dump()
         except ValueError as e:
             return {
                 "status": "error",
@@ -240,15 +169,19 @@ def create_kb_tools(mcp: FastMCP) -> None:
                 "status": "error",
                 "error": str(e)
             }
+        except Exception as e:
+            logger.error(f"Error updating metadata for {path}: {e}", exc_info=True, stack_info=True)
+            return {
+                "status": "error",
+                "error": str(e)
+            }
     
     @mcp.tool()
-    async def kb_read_document(path: str,
-                             chunk_num: Optional[int] = None) -> Dict[str, Any]:
-        """Read a document from the knowledge base.
+    async def kb_read_index(path: str) -> Dict[str, Any]:
+        """Read a document index from the knowledge base.
         
         Args:
             path: Document path in format "namespace/collection[/subcollection]*/name"
-            chunk_num: Optional chunk number to read
             
         Returns:
             Dictionary with document content, metadata, and optional nextChunkNum
@@ -258,28 +191,57 @@ def create_kb_tools(mcp: FastMCP) -> None:
         
         try:
             # Parse the path
-            components = await PathComponents.parse_path(path)
+            components = PathComponents.parse_path(path)
             
             # Read the document using components
-            document = await kb_manager.read_document(
-                namespace=components.namespace,
-                collection=components.collection,
-                name=components.name,
-                chunk_num=chunk_num
-            )
+            index = await kb_manager.read_index(components)
             
-            # Add URN to the response
-            if "metadata" in document:
-                document["urn"] = components.urn
-                document["path"] = components.path
-            
-            return document
+            return index.model_dump()
         except ValueError as e:
             return {
                 "status": "error",
                 "error": str(e)
             }
-    
+        except Exception as e:
+            logger.error(f"Error reading document at {path}: {e}", exc_info=True, stack_info=True)
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
+    @mcp.tool()
+    async def kb_read_content(path: str) -> Dict[str, Any]:
+        """Read content from a document in the knowledge base.
+        
+        Args:
+            path: Document path in format "namespace/collection[/subcollection]*/name"
+            
+        Returns:
+            Document content as string
+        """
+        kb_manager = KnowledgeBaseManager.from_env()
+        await kb_manager.initialize()
+        
+        try:
+            # Parse the path
+            components = PathComponents.parse_path(path)
+            
+            # Read the document using components
+            content = await kb_manager.read_content(components)
+            
+            return content
+        except ValueError as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+        except Exception as e:
+            logger.error(f"Error reading content from {path}: {e}", exc_info=True, stack_info=True)
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
     @mcp.tool()
     async def kb_add_preference(path: str,
                               predicate: str,
@@ -299,21 +261,25 @@ def create_kb_tools(mcp: FastMCP) -> None:
         
         try:
             # Parse the path
-            components = await PathComponents.parse_path(path)
+            components = PathComponents.parse_path(path)
             
             # Create triple with the document URN as subject
             preferences = [ImplicitRDFTriple(predicate=predicate, object=object)]
             
             # Add preference using components
             result = await kb_manager.add_preference(
-                namespace=components.namespace,
-                collection=components.collection,
-                name=components.name,
+                components=components,
                 preferences=preferences
             )
             
             return result
         except ValueError as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+        except Exception as e:
+            logger.error(f"Error adding preference: {e}", exc_info=True, stack_info=True)
             return {
                 "status": "error",
                 "error": str(e)
@@ -338,16 +304,14 @@ def create_kb_tools(mcp: FastMCP) -> None:
         
         try:
             # Parse the path
-            components = await PathComponents.parse_path(path)
+            components = PathComponents.parse_path(path)
             
             # Create triple with the document URN as subject
             preferences = [ImplicitRDFTriple(predicate=predicate, object=object)]
             
             # Remove preference using components
             result = await kb_manager.remove_preference(
-                namespace=components.namespace,
-                collection=components.collection,
-                name=components.name,
+                components=components,
                 preferences=preferences
             )
             
@@ -377,22 +341,24 @@ def create_kb_tools(mcp: FastMCP) -> None:
         
         try:
             # Parse both paths
-            components = await PathComponents.parse_path(path)
-            ref_components = await PathComponents.parse_path(ref_path)
+            components = PathComponents.parse_path(path)
+            ref_components = PathComponents.parse_path(ref_path)
             
             # Add reference using components
             result = await kb_manager.add_reference(
-                namespace=components.namespace,
-                collection=components.collection,
-                name=components.name,
-                ref_namespace=ref_components.namespace,
-                ref_collection=ref_components.collection,
-                ref_name=ref_components.name,
+                components=components,
+                ref_components=ref_components,
                 relation=relation
             )
             
             return result
         except ValueError as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+        except Exception as e:
+            logger.error(f"Error adding reference: {e}", exc_info=True, stack_info=True)
             return {
                 "status": "error",
                 "error": str(e)
@@ -417,22 +383,24 @@ def create_kb_tools(mcp: FastMCP) -> None:
         
         try:
             # Parse both paths
-            components = await PathComponents.parse_path(path)
-            ref_components = await PathComponents.parse_path(ref_path)
+            components = PathComponents.parse_path(path)
+            ref_components = PathComponents.parse_path(ref_path)
             
             # Remove reference using components
             result = await kb_manager.remove_reference(
-                namespace=components.namespace,
-                collection=components.collection,
-                name=components.name,
-                ref_namespace=ref_components.namespace,
-                ref_collection=ref_components.collection,
-                ref_name=ref_components.name,
+                components=components,
+                ref_components=ref_components,
                 relation=relation
             )
             
             return result
         except ValueError as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+        except Exception as e:
+            logger.error(f"Error removing reference: {e}", exc_info=True, stack_info=True)
             return {
                 "status": "error",
                 "error": str(e)
@@ -454,36 +422,26 @@ def create_kb_tools(mcp: FastMCP) -> None:
         await kb_manager.initialize()
         
         try:
-            namespace = None
-            collection = None
+            components = None
             
             if path:
                 # Parse the path to get namespace/collection
-                components = await PathComponents.parse_path(path)
-                namespace = components.namespace
-                collection = components.collection
+                components = PartialPathComponents.parse_path(path)
             
             # List documents using components
-            document_paths = await kb_manager.list_documents(
-                namespace=namespace,
-                collection=collection,
+            documents = await kb_manager.list_documents(
+                components=components,
                 recursive=recursive
             )
             
-            # Parse paths into components
-            documents = []
-            for doc_path in document_paths:
-                doc_components = await PathComponents.parse_path(doc_path)
-                documents.append({
-                    "path": doc_components.path,
-                    "urn": doc_components.urn,
-                    "namespace": doc_components.namespace,
-                    "collection": doc_components.collection,
-                    "name": doc_components.name
-                })
-            
             return {"documents": documents, "count": len(documents)}
         except ValueError as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+        except Exception as e:
+            logger.error(f"Error listing documents: {e}", exc_info=True, stack_info=True)
             return {
                 "status": "error",
                 "error": str(e)
@@ -506,36 +464,23 @@ def create_kb_tools(mcp: FastMCP) -> None:
         
         try:
             # Parse both paths
-            old_components = await PathComponents.parse_path(path)
-            new_components = await PathComponents.parse_path(new_path)
+            old_components = PathComponents.parse_path(path)
+            new_components = PathComponents.parse_path(new_path)
             
             # Move document using components
-            result_path = await kb_manager.move_document(
-                namespace=old_components.namespace,
-                collection=old_components.collection,
-                name=old_components.name,
-                new_namespace=new_components.namespace,
-                new_collection=new_components.collection,
-                new_name=new_components.name
+            index = await kb_manager.move_document(
+                components=old_components,
+                new_components=new_components
             )
             
-            # Parse result path
-            result_components = await PathComponents.parse_path(result_path)
-            
-            return {
-                "old_path": old_components.path,
-                "old_urn": old_components.urn,
-                "old_namespace": old_components.namespace,
-                "old_collection": old_components.collection,
-                "old_name": old_components.name,
-                "new_path": result_components.path,
-                "new_urn": result_components.urn,
-                "new_namespace": result_components.namespace,
-                "new_collection": result_components.collection,
-                "new_name": result_components.name,
-                "status": "moved"
-            }
+            return index.model_dump()
         except ValueError as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+        except Exception as e:
+            logger.error(f"Error moving document: {e}", exc_info=True, stack_info=True)
             return {
                 "status": "error",
                 "error": str(e)
@@ -556,29 +501,24 @@ def create_kb_tools(mcp: FastMCP) -> None:
         
         try:
             # Parse the path
-            components = await PathComponents.parse_path(path)
+            components = PathComponents.parse_path(path)
             
             # Delete the document using components
-            result = await kb_manager.delete_document(
-                namespace=components.namespace,
-                collection=components.collection,
-                name=components.name
-            )
+            result = await kb_manager.delete_document(components)
             
-            return {
-                "path": components.path,
-                "urn": components.urn,
-                "namespace": components.namespace,
-                "collection": components.collection,
-                "name": components.name,
-                "status": "deleted"
-            }
+            return result
         except ValueError as e:
             return {
                 "status": "error",
                 "error": str(e)
             }
         except FileNotFoundError as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+        except Exception as e:
+            logger.error(f"Error deleting document: {e}", exc_info=True, stack_info=True)
             return {
                 "status": "error",
                 "error": str(e)
@@ -600,15 +540,15 @@ def create_kb_tools(mcp: FastMCP) -> None:
             await kb_manager.initialize()
             
             # Parse the path
-            components = await PathComponents.parse_path(path)
+            components = PathComponents.parse_path(f"kb://{path}")
             
             # Read the document using components
-            document = await kb_manager.read_document(
-                namespace=components.namespace,
-                collection=components.collection,
-                name=components.name
-            )
+            document = await kb_manager.read_content(components)
             
-            return document.get("content", f"Error: Could not retrieve content for {components.urn}")
+            return document
         except Exception as e:
-            return f"Error: {str(e)}"
+            logger.error(f"Error getting document content: {e}", exc_info=True, stack_info=True)
+            return {
+                "status": "error",
+                "error": str(e)
+            }

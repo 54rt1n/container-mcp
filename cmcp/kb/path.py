@@ -58,18 +58,36 @@ class PartialPathComponents(NamedTuple):
             path: The path to fix
             
         Returns:
-            Tuple of (scheme, clean_path, fragment)
+            Tuple of (scheme, clean_path, fragment, extension)
         """
         if not path:
-            return None, path, None
+            return None, path, None, None
         
         # Extract fragment if present
         fragment = None
         extension = None
+        
         if "#" in path:
-            path, fragment = path.split("#", 1)
-            if "." in fragment:
-                fragment, extension = fragment.split(".", 1)
+            # Handle explicit fragment notation with #
+            path, fragment_part = path.split("#", 1)
+            # Handle case where fragment might be a filename with extension
+            if "." in fragment_part:
+                fragment, extension = fragment_part.rsplit(".", 1)
+            else:
+                fragment = fragment_part
+        else:
+            # Check if the last part of the path has an extension
+            path_parts = path.split("/")
+            if path_parts and "." in path_parts[-1]:
+                last_part = path_parts[-1]
+                name_part, ext_part = last_part.rsplit(".", 1)
+                # Only set fragment/extension if this looks like a filename with extension
+                # and not just a dotted name (like "example.com")
+                if ext_part and len(ext_part) <= 10:  # Typical extensions are short
+                    path_parts[-1] = name_part
+                    path = "/".join(path_parts)
+                    fragment = name_part
+                    extension = ext_part
         
         # Check for scheme prefix (like "kb://", "s3://", etc.)
         scheme_match = re.match(r'^([a-zA-Z][a-zA-Z0-9+.-]*)://', path)

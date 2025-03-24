@@ -71,6 +71,8 @@ class KnowledgeBaseManager:
         """
         self.check_initialized()
             
+        chunked = False
+
         # Check if content needs chunking (simple size-based approach)
         if len(content) > self.document_store.DEFAULT_FRAGMENT_SIZE:
 
@@ -78,7 +80,8 @@ class KnowledgeBaseManager:
                 raise ValueError(f"Cannot chunk content for {components.urn} because it is a fragment")
 
             chunks = self.document_store.chunk_content(content)
-            
+            chunked = True
+
             # Write each chunk
             fragments : Dict[str, DocumentFragment] = {}
             for i, chunk in enumerate(chunks):
@@ -90,23 +93,29 @@ class KnowledgeBaseManager:
                     size=len(chunk)
                 )
             
-            # Update metadata with chunks info
-            try:
-                # Try to read existing metadata
-                existing_index = self.document_store.read_index(components)
-                # Update with chunks info
-                self.document_store.update_index(components, {"chunked": True, "fragments": fragments})
-            except FileNotFoundError:
-                # Index doesn't exist yet, this needs to error
-                raise ValueError(f"Document index not found: {components.urn}")
-
         else:
             # Write single content file
             self.document_store.write_content(components, content)
+            fragment = DocumentFragment(
+                sequence_num=0,
+                size=len(content)
+            )
+            fragments = {
+                components.get_fragment_name(prefix="content", default="0000", ext="txt"): fragment
+            }
+
+        # Update index with fragment info
+        try:
+            update = {
+                "fragments": fragments, 
+                "chunked": chunked
+            }
+            updated_index = self.document_store.update_index(components, update)
+        except FileNotFoundError:
+            # Index doesn't exist yet, this needs to error
+            raise ValueError(f"Document index not found: {components.urn}")
         
-        existing_index = self.document_store.read_index(components)
-        
-        return existing_index
+        return updated_index
     
     async def update_metadata(self,
                            components: PathComponents,
@@ -139,6 +148,27 @@ class KnowledgeBaseManager:
         self.document_store.update_index(components, {"metadata": current_index.metadata})
         
         return current_index
+
+    async def check_index(self, components: PathComponents) -> bool:
+        """Check if index exists for a document in the knowledge base.
+        
+        Args:
+            components: PathComponents with namespace, collection, name
+        """
+        self.check_initialized()
+        return self.document_store.check_index(components)
+
+    async def check_content(self, components: PathComponents) -> bool:
+        """Check if content exists for a document in the knowledge base.
+        
+        Args:
+            components: PathComponents with namespace, collection, name and optional fragment
+            
+        """
+        self.check_initialized()
+        
+        # Check if index exists
+        return self.document_store.check_content(components)
     
     async def read_content(self, components: PathComponents) -> Optional[str]:
         """Read content from a document in the knowledge base.
@@ -418,8 +448,7 @@ class KnowledgeBaseManager:
         
         return index
         
-    async def delete_document(self,
-                           components: PathComponents) -> Dict[str, Any]:
+    async def delete_document(self, components: PathComponents) -> Dict[str, Any]:
         """Delete a document from the knowledge base.
         
         Args:
@@ -509,8 +538,8 @@ class KnowledgeBaseManager:
         
         return index
     
-    async def read_document(self, components: PathComponents) -> DocumentIndex:
-        """Read a document from the knowledge base.
+    async def read_index(self, components: PathComponents) -> DocumentIndex:
+        """Read a document index from the knowledge base.
         
         Args:
             components: PathComponents with namespace, collection, and name

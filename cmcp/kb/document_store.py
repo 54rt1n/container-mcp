@@ -188,8 +188,27 @@ class DocumentStore:
         if chunk_path.exists():
             with open(chunk_path, 'r', encoding='utf-8') as f:
                 return f.read()
-        
+
+        # If not found, we will have to read the index and get the fragment with the lowest sequence number
+        index = self.read_index(components)
+        if index.fragments:
+            for fragment, fragment_info in sorted(index.fragments.items(), key=lambda x: int(x[1].sequence_num)):
+                chunk_path = document_path / f"content.{fragment}.txt"
+                if chunk_path.exists():
+                    with open(chunk_path, 'r', encoding='utf-8') as f:
+                        return f.read()
+
         raise FileNotFoundError(f"Document content not found for path: {components.path}")
+
+    def check_content(self, components: PathComponents) -> bool:
+        """Check if content exists for a document.
+        
+        Args:
+            components: PathComponents with namespace, collection, and name
+        """
+        document_path = self.base_path / components.path
+        filename = components.get_fragment_name(prefix="content", default="0000", ext="txt")
+        return (document_path / filename).exists()
     
     def chunk_content(self, content: str, max_fragment_size: Optional[int] = None) -> List[str]:
         """Split content into fragments.
@@ -241,9 +260,19 @@ class DocumentStore:
         
         # Write to index file
         with open(index_path, 'w', encoding='utf-8') as f:
-            json.dump(doc_index.model_dump(), f, indent=2, default=str)
+            f.write(doc_index.model_dump_json(indent=2))
         
         return index_path
+    
+    def check_index(self, components: PathComponents) -> bool:
+        """Check if document index file exists.
+        
+        Args:
+            components: PathComponents with namespace, collection, and name
+        """
+        document_path = self.base_path / components.path
+        index_path = document_path / "index.json"
+        return index_path.exists()
     
     def read_index(self, components: PathComponents) -> DocumentIndex:
         """Read document index file.
@@ -288,20 +317,21 @@ class DocumentStore:
         # Update fields
         index_dict = index.model_dump()
         index_dict.update(updates)
-        index_dict['updated_at'] = datetime.utcnow()
+        new_index = DocumentIndex(**index_dict)
+        new_index.updated_at = datetime.utcnow()
         
         # Don't allow changing path components through updates
-        index_dict['namespace'] = index.namespace
-        index_dict['collection'] = index.collection
-        index_dict['name'] = index.name
+        new_index.namespace = index.namespace
+        new_index.collection = index.collection
+        new_index.name = index.name
 
         # Write back
         document_path = self.base_path / components.path
         index_path = document_path / "index.json"
         with open(index_path, 'w', encoding='utf-8') as f:
-            json.dump(index_dict, f, indent=2, default=str)
+            f.write(new_index.model_dump_json(indent=2))
         
-        return DocumentIndex(**index_dict)
+        return new_index
     
     def find_documents_recursive(self, components: PartialPathComponents) -> List[str]:
         """Find all documents recursively under a namespace/collection.
@@ -432,7 +462,6 @@ class DocumentStore:
         self.write_index(new_components, index)
         
         return None
-        
 
     def validate_index(self, components: PathComponents) -> None:
         """Validate the index of a document.
