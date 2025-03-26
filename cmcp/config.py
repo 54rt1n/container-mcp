@@ -102,6 +102,13 @@ class KBConfig(BaseModel):
     storage_path: str = Field(default=os.path.join(BASE_PATHS["base_dir"], "kb"))
     timeout_default: int = Field(default=30)
     timeout_max: int = Field(default=120)
+    # Search configuration
+    search_enabled: bool = Field(default=True, description="Enable search functionality")
+    sparse_index_path: Optional[str] = Field(default=None, description="Path to sparse search index")
+    graph_index_path: Optional[str] = Field(default=None, description="Path to graph search index")
+    reranker_model: Optional[str] = Field(default="mixedbread-ai/mxbai-rerank-base-v1", description="Reranker model name")
+    search_relation_predicates: List[str] = Field(default_factory=lambda: ["references"], description="Relation predicates to follow in graph search")
+    search_graph_neighbor_limit: int = Field(default=1000, description="Maximum number of neighbors to retrieve in graph search")
 
 
 class MCPConfig(BaseModel):
@@ -206,6 +213,13 @@ def load_env_config() -> Dict[str, Any]:
         storage_path=kb_storage_path,
         timeout_default=int(os.environ.get("KB_TIMEOUT_DEFAULT", "30")),
         timeout_max=int(os.environ.get("KB_TIMEOUT_MAX", "120")),
+        # Search configuration
+        search_enabled=os.environ.get("CMCP_KB_SEARCH_ENABLED", "true").lower() == "true",
+        sparse_index_path=os.environ.get("CMCP_KB_SPARSE_INDEX_PATH", os.path.join(kb_storage_path, "search/sparse_idx")),
+        graph_index_path=os.environ.get("CMCP_KB_GRAPH_INDEX_PATH", os.path.join(kb_storage_path, "search/graph_idx")),
+        reranker_model=os.environ.get("CMCP_KB_RERANKER_MODEL", "mixedbread-ai/mxbai-rerank-base-v1"),
+        search_relation_predicates=os.environ.get("CMCP_KB_SEARCH_RELATION_PREDICATES", "references").split(",") if os.environ.get("CMCP_KB_SEARCH_RELATION_PREDICATES") else ["references"],
+        search_graph_neighbor_limit=int(os.environ.get("CMCP_KB_SEARCH_GRAPH_NEIGHBOR_LIMIT", "1000"))
     )
     config["kb_config"] = kb_config
     

@@ -514,3 +514,46 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                 "status": "error",
                 "error": str(e)
             }
+
+    # Add the kb_search tool at the end of the function
+    @mcp.tool()
+    async def kb_search(query: Optional[str] = None,
+                      graph_filter_urns: Optional[List[str]] = None,
+                      graph_expand_hops: int = 0,
+                      relation_predicates: Optional[List[str]] = None,
+                      top_k: int = 10,
+                      use_reranker: bool = True) -> Dict[str, Any]:
+        """Search the knowledge base using text query and/or graph expansion.
+
+        Args:
+            query: Text query for sparse search and reranking.
+            graph_filter_urns: List of starting URNs for graph expansion/filtering.
+            graph_expand_hops: Number of hops to expand graph relationships (default 0).
+            relation_predicates: List of predicates to follow during graph traversal (default is "references").
+            top_k: Number of results to return (after reranking if enabled).
+            use_reranker: Whether to use semantic reranking (default True).
+
+        Returns:
+            Dictionary containing ranked list of document results.
+        """
+        try:
+            # Decide sparse k based on reranking needs - fetch more initially
+            top_k_sparse = max(50, top_k * 2) if use_reranker and query else top_k
+
+            results = await kb_manager.search(
+                query=query,
+                graph_filter_urns=graph_filter_urns,
+                graph_expand_hops=graph_expand_hops,
+                relation_predicates=relation_predicates,
+                top_k_sparse=top_k_sparse,
+                top_k_rerank=top_k,  # Final desired K
+                use_reranker=use_reranker
+            )
+            return {"results": results, "count": len(results)}
+        except ValueError as e:
+            return {"status": "error", "error": str(e)}
+        except RuntimeError as e:
+            return {"status": "error", "error": str(e)}
+        except Exception as e:
+            logger.error(f"Error during kb_search: {e}", exc_info=True)
+            return {"status": "error", "error": f"An unexpected error occurred: {str(e)}"}
