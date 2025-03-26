@@ -16,11 +16,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def create_kb_tools(mcp: FastMCP) -> None:
+def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
     """Create and register knowledge base tools.
     
     Args:
         mcp: The MCP instance
+        kb_manager: The knowledge base manager instance
     """
     
     @mcp.tool()
@@ -39,9 +40,6 @@ def create_kb_tools(mcp: FastMCP) -> None:
         Returns:
             Dictionary with document index
         """
-        kb_manager = KnowledgeBaseManager.from_env()
-        await kb_manager.initialize()
-        
         try:
             # Parse the path to get components
             components = PathComponents.parse_path(path)
@@ -87,9 +85,6 @@ def create_kb_tools(mcp: FastMCP) -> None:
         Returns:
             Dictionary with document location and status
         """
-        kb_manager = KnowledgeBaseManager.from_env()
-        await kb_manager.initialize()
-        
         try:
             # Parse the path to get components
             components = PathComponents.parse_path(path)
@@ -145,9 +140,6 @@ def create_kb_tools(mcp: FastMCP) -> None:
         Returns:
             Dictionary with document location and status
         """
-        kb_manager = KnowledgeBaseManager.from_env()
-        await kb_manager.initialize()
-        
         try:
             # Parse the path to get components
             components = PathComponents.parse_path(path)
@@ -186,9 +178,6 @@ def create_kb_tools(mcp: FastMCP) -> None:
         Returns:
             Dictionary with document content, metadata, and optional nextChunkNum
         """
-        kb_manager = KnowledgeBaseManager.from_env()
-        await kb_manager.initialize()
-        
         try:
             # Parse the path
             components = PathComponents.parse_path(path)
@@ -219,9 +208,6 @@ def create_kb_tools(mcp: FastMCP) -> None:
         Returns:
             Document content as string
         """
-        kb_manager = KnowledgeBaseManager.from_env()
-        await kb_manager.initialize()
-        
         try:
             # Parse the path
             components = PathComponents.parse_path(path)
@@ -256,9 +242,6 @@ def create_kb_tools(mcp: FastMCP) -> None:
         Returns:
             Dictionary with status and updated preference count
         """
-        kb_manager = KnowledgeBaseManager.from_env()
-        await kb_manager.initialize()
-        
         try:
             # Parse the path
             components = PathComponents.parse_path(path)
@@ -299,9 +282,6 @@ def create_kb_tools(mcp: FastMCP) -> None:
         Returns:
             Dictionary with status and remaining preference count
         """
-        kb_manager = KnowledgeBaseManager.from_env()
-        await kb_manager.initialize()
-        
         try:
             # Parse the path
             components = PathComponents.parse_path(path)
@@ -336,9 +316,6 @@ def create_kb_tools(mcp: FastMCP) -> None:
         Returns:
             Dictionary with status and updated reference count
         """
-        kb_manager = KnowledgeBaseManager.from_env()
-        await kb_manager.initialize()
-        
         try:
             # Parse both paths
             components = PathComponents.parse_path(path)
@@ -378,9 +355,6 @@ def create_kb_tools(mcp: FastMCP) -> None:
         Returns:
             Dictionary with status and remaining reference count
         """
-        kb_manager = KnowledgeBaseManager.from_env()
-        await kb_manager.initialize()
-        
         try:
             # Parse both paths
             components = PathComponents.parse_path(path)
@@ -418,9 +392,6 @@ def create_kb_tools(mcp: FastMCP) -> None:
         Returns:
             Dictionary with list of document locations
         """
-        kb_manager = KnowledgeBaseManager.from_env()
-        await kb_manager.initialize()
-        
         try:
             components = None
             
@@ -459,9 +430,6 @@ def create_kb_tools(mcp: FastMCP) -> None:
         Returns:
             Dictionary with old and new document locations
         """
-        kb_manager = KnowledgeBaseManager.from_env()
-        await kb_manager.initialize()
-        
         try:
             # Parse both paths
             old_components = PathComponents.parse_path(path)
@@ -496,9 +464,6 @@ def create_kb_tools(mcp: FastMCP) -> None:
         Returns:
             Dictionary with deleted document information and status
         """
-        kb_manager = KnowledgeBaseManager.from_env()
-        await kb_manager.initialize()
-        
         try:
             # Parse the path
             components = PathComponents.parse_path(path)
@@ -536,9 +501,6 @@ def create_kb_tools(mcp: FastMCP) -> None:
             Document content as string
         """
         try:
-            kb_manager = KnowledgeBaseManager.from_env()
-            await kb_manager.initialize()
-            
             # Parse the path
             components = PathComponents.parse_path(f"kb://{path}")
             

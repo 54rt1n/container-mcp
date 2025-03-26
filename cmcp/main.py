@@ -53,6 +53,7 @@ from cmcp.managers.bash_manager import BashManager
 from cmcp.managers.python_manager import PythonManager
 from cmcp.managers.file_manager import FileManager
 from cmcp.managers.web_manager import WebManager
+from cmcp.managers.knowledge_base_manager import KnowledgeBaseManager
 from cmcp.utils.logging import setup_logging
 from cmcp.tools import register_all_tools
 
@@ -70,13 +71,24 @@ bash_manager = BashManager.from_env(config)
 python_manager = PythonManager.from_env(config)
 file_manager = FileManager.from_env(config)
 web_manager = WebManager.from_env(config)
+kb_manager = KnowledgeBaseManager.from_env(config)
 
 # Set up logging
 log_file = os.path.join("logs", "cmcp.log") if os.path.exists("logs") else None
 setup_logging(config.log_level, log_file)
 
+# Initialize the knowledge base manager
+async def initialize_managers():
+    await kb_manager.initialize()
+
+# Run initialization in event loop
+if asyncio.get_event_loop().is_running():
+    asyncio.create_task(initialize_managers())
+else:
+    asyncio.run(initialize_managers())
+
 # Register all tools
-register_all_tools(mcp, bash_manager, python_manager, file_manager, web_manager)
+register_all_tools(mcp, bash_manager, python_manager, file_manager, web_manager, kb_manager)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
@@ -111,7 +123,7 @@ if __name__ == "__main__":
         logger.info(f"Received {signal_name}, shutting down gracefully...")
         
         # Perform cleanup for managers if needed
-        for manager in [bash_manager, python_manager, file_manager, web_manager]:
+        for manager in [bash_manager, python_manager, file_manager, web_manager, kb_manager]:
             if hasattr(manager, 'cleanup'):
                 try:
                     logger.info(f"Cleaning up {manager.__class__.__name__}")
