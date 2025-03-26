@@ -51,11 +51,11 @@ dependencies = [
     # Async utilities
     "aiofiles>=0.8.0",
     "asyncio>=3.4.3",
+    "aiohttp>=3.8.0",
     
     # Web capabilities
     "playwright>=1.31.0",
     "beautifulsoup4>=4.11.1",
-    "requests>=2.28.1",
     
     # Data handling
     "pydantic>=2.0.0",

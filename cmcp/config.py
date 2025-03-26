@@ -93,6 +93,7 @@ class WebConfig(BaseModel):
 
     timeout_default: int = Field(default=30)
     allowed_domains: Optional[List[str]] = Field(default=None)
+    brave_search_api_key: Optional[str] = Field(default=None, description="API Key for Brave Search API")
 
 
 class KBConfig(BaseModel):
@@ -126,6 +127,12 @@ class AppConfig(BaseModel):
     filesystem_config: FileSystemConfig = Field(default_factory=FileSystemConfig)
     web_config: WebConfig = Field(default_factory=WebConfig)
     kb_config: KBConfig = Field(default_factory=KBConfig)
+    
+    # Tool Enable/Disable Flags
+    tools_enable_system: bool = Field(default=True, description="Enable System tools (bash, python)")
+    tools_enable_file: bool = Field(default=True, description="Enable File tools")
+    tools_enable_web: bool = Field(default=True, description="Enable Web tools (search, scrape, browse)")
+    tools_enable_kb: bool = Field(default=True, description="Enable Knowledge Base tools")
     
     @validator("log_level")
     def validate_log_level(cls, v):
@@ -185,9 +192,11 @@ def load_env_config() -> Dict[str, Any]:
     
     # Web config
     web_domains = os.environ.get("WEB_ALLOWED_DOMAINS", "*")
+    brave_key = os.environ.get("BRAVE_SEARCH_API_KEY")  # Get the key from env
     web_config = WebConfig(
         timeout_default=int(os.environ.get("WEB_TIMEOUT_DEFAULT", "30")),
         allowed_domains=None if web_domains == "*" else web_domains.split(","),
+        brave_search_api_key=brave_key  # Pass the retrieved key
     )
     config["web_config"] = web_config
     
@@ -199,6 +208,12 @@ def load_env_config() -> Dict[str, Any]:
         timeout_max=int(os.environ.get("KB_TIMEOUT_MAX", "120")),
     )
     config["kb_config"] = kb_config
+    
+    # Tool Enable/Disable Flags - default to true if not set
+    config["tools_enable_system"] = os.environ.get("TOOLS_ENABLE_SYSTEM", "true").lower() == "true"
+    config["tools_enable_file"] = os.environ.get("TOOLS_ENABLE_FILE", "true").lower() == "true"
+    config["tools_enable_web"] = os.environ.get("TOOLS_ENABLE_WEB", "true").lower() == "true"
+    config["tools_enable_kb"] = os.environ.get("TOOLS_ENABLE_KB", "true").lower() == "true"
     
     return config
 

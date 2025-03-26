@@ -79,7 +79,9 @@ setup_logging(config.log_level, log_file)
 
 # Initialize the knowledge base manager
 async def initialize_managers():
-    await kb_manager.initialize()
+    # Only initialize if KB tools are enabled
+    if config.tools_enable_kb:
+        await kb_manager.initialize()
 
 # Run initialization in event loop
 if asyncio.get_event_loop().is_running():
@@ -87,8 +89,16 @@ if asyncio.get_event_loop().is_running():
 else:
     asyncio.run(initialize_managers())
 
-# Register all tools
-register_all_tools(mcp, bash_manager, python_manager, file_manager, web_manager, kb_manager)
+# Register tools based on configuration flags
+register_all_tools(
+    mcp,
+    config,  # Pass the config object
+    bash_manager,
+    python_manager,
+    file_manager,
+    web_manager,
+    kb_manager
+)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
