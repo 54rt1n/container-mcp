@@ -412,7 +412,7 @@ Container-MCP implements multiple layers of security:
 The quickest way to get started is to use the all-in-one script:
 
 ```bash
-git clone https://github.com/container-mcp/container-mcp.git
+git clone https://github.com/54rt1n/container-mcp.git
 cd container-mcp
 chmod +x bin/00-all-in-one.sh
 ./bin/00-all-in-one.sh
