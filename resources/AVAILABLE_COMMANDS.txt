@@ -140,7 +140,6 @@ Feel free to use any of these tools in your sandbox environment.
   libxslt1-dev - Development files for libxslt
   libssl-dev  - Development files for OpenSSL
   libffi-dev  - Development files for libffi
-  hugo        - Static site generator
 
 --[ DATABASE TOOLS ]------------------------------------------------------
 
