@@ -7,7 +7,7 @@ import os
 import logging
 import tempfile
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # Detect environment
 def is_in_container() -> bool:
     """Check if we're running inside a container."""
-    return os.path.exists('/.dockerenv') or os.path.exists('/run/.containerenv')
+    return os.path.exists('/.dockerenv') or os.path.exists('/run/.containerenv') or os.environ.get("CONTAINER") == "true"
 
 
 # Determine base paths
@@ -141,7 +141,8 @@ class AppConfig(BaseModel):
     tools_enable_web: bool = Field(default=True, description="Enable Web tools (search, scrape, browse)")
     tools_enable_kb: bool = Field(default=True, description="Enable Knowledge Base tools")
     
-    @validator("log_level")
+    @field_validator("log_level")
+    @classmethod
     def validate_log_level(cls, v):
         """Validate log level."""
         valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]

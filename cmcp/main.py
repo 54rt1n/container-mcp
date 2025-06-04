@@ -84,9 +84,13 @@ async def initialize_managers():
         await kb_manager.initialize()
 
 # Run initialization in event loop
-if asyncio.get_event_loop().is_running():
+try:
+    # Check if we're already running in an event loop
+    asyncio.get_running_loop()
+    # If we get here, we're in an event loop, so create a task
     asyncio.create_task(initialize_managers())
-else:
+except RuntimeError:
+    # No running event loop, so run the initialization
     asyncio.run(initialize_managers())
 
 # Register tools based on configuration flags

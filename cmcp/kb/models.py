@@ -3,7 +3,7 @@
 
 """Pydantic models for the knowledge base document store."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, NamedTuple, Dict, Any
 from pydantic import BaseModel, Field
 
@@ -34,8 +34,8 @@ class DocumentIndex(BaseModel):
     name: str = Field(..., description="Unique name for the document within its collection")
     type: str = Field("document", description="Type of the resource")
     subtype: str = Field("text", description="Subtype of the document")
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
-    updated_at: datetime = Field(default_factory=datetime.utcnow, description="Last update timestamp")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Creation timestamp")
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Last update timestamp")
     content_type: str = Field("text/plain", description="MIME type of the content")
     chunked: bool = Field(False, description="Whether the document is split into fragments")
     fragments: Dict[str, DocumentFragment] = Field(default_factory=dict, description="A dictionary of filename -> fragment information")

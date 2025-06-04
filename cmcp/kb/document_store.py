@@ -8,7 +8,7 @@ import json
 import re
 import time
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
@@ -164,12 +164,8 @@ class DocumentStore:
 
         # If fragment is specified, try to read that specific file
         if components.fragment:
-            # Check if fragment already has an extension, if not, add .txt
-            if '.' in components.fragment:
-                fragment_filename = components.fragment
-            else:
-                fragment_filename = f"{components.fragment}.txt"
-                
+            # Use the same naming convention as write_content
+            fragment_filename = components.get_fragment_name(prefix="content", default="0000", ext="txt")
             fragment_path = document_path / fragment_filename
             if fragment_path.exists():
                 with open(fragment_path, 'r', encoding='utf-8') as f:
@@ -318,7 +314,7 @@ class DocumentStore:
         index_dict = index.model_dump()
         index_dict.update(updates)
         new_index = DocumentIndex(**index_dict)
-        new_index.updated_at = datetime.utcnow()
+        new_index.updated_at = datetime.now(timezone.utc)
         
         # Don't allow changing path components through updates
         new_index.namespace = index.namespace

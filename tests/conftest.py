@@ -20,39 +20,68 @@ from cmcp.managers.web_manager import WebManager
 @pytest.fixture
 def test_config() -> AppConfig:
     """Create a test configuration object."""
-    # Create a test configuration with safe defaults
-    test_config_dict = {
-        "mcp_host": "127.0.0.1",
-        "mcp_port": 8000,
-        "debug": True,
-        "log_level": "DEBUG",
-        "sandbox_root": "/tmp/cmcp-test-sandbox",
-        "temp_dir": "/tmp/cmcp-test-temp",
-        "bash_config": {
-            "sandbox_dir": "/tmp/cmcp-test-sandbox/bash",
-            "allowed_commands": ["ls", "cat", "echo", "pwd"],
-            "timeout_default": 5,
-            "timeout_max": 10
-        },
-        "python_config": {
-            "sandbox_dir": "/tmp/cmcp-test-sandbox/python",
-            "memory_limit": 128,
-            "timeout_default": 5,
-            "timeout_max": 10
-        },
-        "filesystem_config": {
-            "base_dir": "/tmp/cmcp-test-sandbox/files",
-            "max_file_size_mb": 1,
-            "allowed_extensions": ["txt", "md", "py", "json"]
-        },
-        "web_config": {
-            "timeout_default": 5,
-            "allowed_domains": ["example.com", "google.com"]
+    # Create a temporary base directory for this test run
+    with tempfile.TemporaryDirectory(prefix="cmcp-test-base-") as temp_base_dir:
+        sandbox_root = os.path.join(temp_base_dir, "sandbox")
+        temp_dir_files = os.path.join(temp_base_dir, "temp")
+        kb_storage = os.path.join(temp_base_dir, "kb")
+        sparse_idx_path = os.path.join(kb_storage, "search/sparse_idx")
+        graph_idx_path = os.path.join(kb_storage, "search/graph_idx")
+
+        # Create necessary dirs for config loading
+        os.makedirs(sandbox_root, exist_ok=True)
+        os.makedirs(temp_dir_files, exist_ok=True)
+        os.makedirs(kb_storage, exist_ok=True)
+        os.makedirs(sparse_idx_path, exist_ok=True)
+        os.makedirs(graph_idx_path, exist_ok=True)
+
+        test_config_dict = {
+            "mcp_host": "127.0.0.1",
+            "mcp_port": 8000,
+            "debug": True,
+            "log_level": "DEBUG",
+            "sandbox_root": sandbox_root,
+            "temp_dir": temp_dir_files,
+            "bash_config": {
+                "sandbox_dir": os.path.join(sandbox_root, "bash"), # Use subdirs
+                "allowed_commands": ["ls", "cat", "echo", "pwd"],
+                "timeout_default": 5,
+                "timeout_max": 10
+            },
+            "python_config": {
+                "sandbox_dir": os.path.join(sandbox_root, "python"), # Use subdirs
+                "memory_limit": 128,
+                "timeout_default": 5,
+                "timeout_max": 10
+            },
+            "filesystem_config": {
+                "base_dir": os.path.join(sandbox_root, "files"), # Use subdirs
+                "max_file_size_mb": 1,
+                "allowed_extensions": ["txt", "md", "py", "json"]
+            },
+            "web_config": {
+                "timeout_default": 5,
+                "allowed_domains": ["example.com", "google.com"],
+                "brave_search_api_key": "dummy_key" # Add dummy key if needed
+            },
+            # --- Add/Update KB Config ---
+            "kb_config": {
+                "storage_path": kb_storage,
+                "timeout_default": 30,
+                "timeout_max": 60,
+                "search_enabled": True, # Default for testing manager logic
+                "sparse_index_path": sparse_idx_path,
+                "graph_index_path": graph_idx_path,
+                "reranker_model": "mixedbread-ai/mxbai-rerank-base-v1", # Keep model name
+                "search_relation_predicates": ["references", "cites"], # Example list
+                "search_graph_neighbor_limit": 500 # Example limit
+            }
+            # --- End KB Config ---
         }
-    }
-    
-    # Create config object
-    return AppConfig(**test_config_dict)
+
+        # Create config object
+        yield AppConfig(**test_config_dict)
+        # temp_base_dir is cleaned up automatically by TemporaryDirectory context manager
 
 
 @pytest.fixture
@@ -128,10 +157,15 @@ def web_manager(test_config):
     yield manager
 
 
-# Helper fixture for asyncio tests
 @pytest.fixture
-def event_loop():
-    """Create an event loop for asyncio tests."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close() 
+async def kb_manager(test_config):
+    """Create a KnowledgeBaseManager instance for tests."""
+    # Import here to avoid circular imports
+    from cmcp.managers.knowledge_base_manager import KnowledgeBaseManager
+    
+    # Create manager
+    manager = KnowledgeBaseManager.from_env(test_config)
+    # Initialize the manager
+    await manager.initialize()
+    
+    yield manager 

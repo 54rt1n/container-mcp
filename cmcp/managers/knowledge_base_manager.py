@@ -7,7 +7,7 @@ import os
 import re
 import asyncio
 from typing import Dict, List, Any, Optional, Tuple, NamedTuple, Set
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 from pathlib import Path
 
@@ -151,81 +151,50 @@ class KnowledgeBaseManager:
     async def write_content(self, components: PathComponents, content: str) -> DocumentIndex:
         """Write content to a document in the knowledge base.
         
+        Also updates the sparse search index if search is enabled.
+
         Args:
             components: PathComponents with namespace, collection, and name
             content: Document content
-            
+
         Returns:
             Updated document index
-            
+
         Raises:
             RuntimeError: If the knowledge base manager is not initialized
         """
         self.check_initialized()
-            
-        chunked = False
-
-        # Check if content needs chunking (simple size-based approach)
-        if len(content) > self.document_store.DEFAULT_FRAGMENT_SIZE:
-
-            if components.fragment:
-                raise ValueError(f"Cannot chunk content for {components.urn} because it is a fragment")
-
-            chunks = self.document_store.chunk_content(content)
-            chunked = True
-
-            # Write each chunk
-            fragments : Dict[str, DocumentFragment] = {}
-            for i, chunk in enumerate(chunks):
-                fragment_component = components.copy()
-                fragment_component.fragment = f"{i:04d}"    
-                filename = self.document_store.write_content(fragment_component, chunk)
-                fragments[filename] = DocumentFragment(
-                    sequence_num=i,
-                    size=len(chunk)
-                )
-            
-        else:
-            # Write single content file
-            self.document_store.write_content(components, content)
-            fragment = DocumentFragment(
-                sequence_num=0,
-                size=len(content)
-            )
-            fragments = {
-                components.get_fragment_name(prefix="content", default="0000", ext="txt"): fragment
-            }
-
-        # Update index with fragment info
-        try:
-            update = {
-                "fragments": fragments, 
-                "chunked": chunked
-            }
-            updated_index = self.document_store.update_index(components, update)
-            
-            # Update sparse search index if enabled
-            if self.search_enabled and self.sparse_search_index:
+        
+        # Update the document content
+        content_path = self.document_store.write_content(components, content)
+        
+        # Update document index with additional metadata (just the timestamp, not content_path)
+        index_update = {
+            "updated_at": datetime.now(timezone.utc),
+        }
+        
+        # Update search indexes if enabled
+        if self.search_enabled:
+            if self.sparse_search_index:
                 try:
-                    self.logger.debug(f"Updating sparse search index for {components.urn}")
+                    self.logger.debug(f"Updating sparse search index for: {components.urn}")
                     
                     # Use lock to ensure only one update happens at a time
                     async with self.sparse_index_lock:
                         # Run blocking Tantivy operations in a separate thread
                         await asyncio.to_thread(
-                            self._update_sparse_index_sync, 
-                            components.urn, 
+                            self._update_sparse_index_sync,
+                            components.urn,
                             content
                         )
-                    
-                    self.logger.debug(f"Updated sparse search index for {components.urn}")
+                        
+                    self.logger.debug(f"Updated sparse search index for: {components.urn}")
                 except Exception as e:
-                    self.logger.error(f"Failed to update sparse search index for {components.urn}: {e}", exc_info=True)
-                    # Continue with non-search operations
-            
-        except FileNotFoundError:
-            # Index doesn't exist yet, this needs to error
-            raise ValueError(f"Document index not found: {components.urn}")
+                    self.logger.error(f"Failed to update sparse search index: {e}", exc_info=True)
+                    # Continue with the non-search operations
+        
+        # Update the index with the new metadata
+        updated_index = self.document_store.update_index(components, index_update)
         
         return updated_index
     
@@ -283,33 +252,38 @@ class KnowledgeBaseManager:
         return self.document_store.check_content(components)
     
     async def read_content(self, components: PathComponents) -> Optional[str]:
-        """Read content from a document in the knowledge base.
+        """Read content of a document.
         
         Args:
-            components: PathComponents with namespace, collection, name and optional fragment
-
+            components: PathComponents for the document
+            
         Returns:
-            Document content or None if the content doesn't exist
+            Document content or None if not found
             
         Raises:
             RuntimeError: If the knowledge base manager is not initialized
-            FileNotFoundError: If the document metadata doesn't exist
+            FileNotFoundError: If the document doesn't exist
         """
         self.check_initialized()
         
-        # First check if index exists
         try:
-            current_index = self.document_store.read_index(components)
+            # Read document index to get content path
+            index = self.document_store.read_index(components)
+            
+            try:
+                # Read the actual content file
+                return self.document_store.read_content(components)
+            except FileNotFoundError:
+                # Content file not found, but index exists
+                self.logger.warning(f"Content file not found for document: {components.urn}")
+                return None
         except FileNotFoundError:
+            # If we can't find the document index, it doesn't exist at all
             raise FileNotFoundError(f"Document not found: {components.urn}")
-        
-        # Try to read content
-        try:
-            content = self.document_store.read_content(components)
-            return content
-        except FileNotFoundError:
-            # Content doesn't exist, but index does
-            return None
+        except Exception as e:
+            # Other errors like missing content file
+            self.logger.exception(f"Error reading content for {components.urn}: {e}")
+            return None  # Return None for content but don't fail
     
     async def add_preference(self, components: PathComponents, preferences: List[ImplicitRDFTriple]) -> Dict[str, Any]:
         """Add preference triples to a document.
@@ -401,7 +375,23 @@ class KnowledgeBaseManager:
             RuntimeError: If the knowledge base manager is not initialized
             FileNotFoundError: If the document doesn't exist
         """
-        return await self.remove_preference(components, None)
+        self.check_initialized()
+        
+        # Read document metadata
+        try:
+            index = self.document_store.read_index(components)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Document not found: {components.urn}")
+        
+        # Update the index with empty preferences
+        updated_index = self.document_store.update_index(
+            components, {"preferences": []}
+        )
+        
+        return {
+            "status": "updated",
+            "preference_count": len(updated_index.preferences)
+        }
     
     async def add_reference(self, 
                           components: PathComponents,
@@ -440,23 +430,15 @@ class KnowledgeBaseManager:
             object=ref_components.urn
         )
         
-        # Initialize references list if it doesn't exist
-        if "references" not in source_index.metadata:
-            source_index.metadata["references"] = []
-        
-        # Check if reference already exists
-        ref_exists = False
-        references = source_index.metadata["references"]
-        for ref in references:
-            if ref.get("predicate") == triple.predicate and ref.get("object") == triple.object:
-                ref_exists = True
-                break
+        # Get existing references and check if reference already exists
+        existing_references = list(source_index.references)
+        ref_exists = triple in existing_references
         
         if not ref_exists:
             # Add to references
-            references.append(triple.model_dump())
+            existing_references.append(triple)
             # Update document index
-            self.document_store.update_index(components, {"metadata": source_index.metadata})
+            self.document_store.update_index(components, {"references": existing_references})
             
             # Update graph search index
             if self.search_enabled and self.graph_search_index:
@@ -523,8 +505,9 @@ class KnowledgeBaseManager:
         # Only update if something changed
         if len(updated_references) != len(existing_references):
             # Update the metadata
+            update_data = {"references": updated_references}
             updated_index = self.document_store.update_index(
-                components, {"references": updated_references}
+                components, update_data
             )
             
             # Update graph search index
@@ -620,10 +603,10 @@ class KnowledgeBaseManager:
         """Delete a document from the knowledge base.
         
         Args:
-            components: PathComponents with namespace, collection, and name
+            components: PathComponents for the document
             
         Returns:
-            Status dictionary
+            Operation status
             
         Raises:
             RuntimeError: If the knowledge base manager is not initialized
@@ -631,19 +614,23 @@ class KnowledgeBaseManager:
         self.check_initialized()
         
         # Check if document exists before trying to delete it
-        exists = self.document_store.check_index(components)
-        if not exists:
+        try:
+            exists = self.document_store.check_index(components)
+            if not exists:
+                return {
+                    "status": "not_found",
+                    "message": f"Document not found: {components.urn}"
+                }
+        except Exception as e:
+            self.logger.error(f"Error checking document existence: {e}", exc_info=True)
             return {
-                "status": "not_found",
-                "message": f"Document not found: {components.urn}"
+                "status": "error",
+                "message": f"Error checking document: {str(e)}"
             }
-        
-        # Delete the document
-        self.document_store.delete_document(components)
-        
-        # Update search indices
+            
+        # Update the search indices if enabled
         if self.search_enabled:
-            # Update sparse search index
+            # Remove from sparse search index
             if self.sparse_search_index:
                 try:
                     self.logger.debug(f"Removing document from sparse search index: {components.urn}")
@@ -659,8 +646,9 @@ class KnowledgeBaseManager:
                     self.logger.debug(f"Removed document from sparse search index: {components.urn}")
                 except Exception as e:
                     self.logger.error(f"Failed to update sparse search index: {e}", exc_info=True)
+                    # Continue with the non-search operations
             
-            # Update graph search index - remove all triples with this document
+            # Remove from graph search index
             if self.graph_search_index:
                 try:
                     self.logger.debug(f"Removing document from graph search index: {components.urn}")
@@ -676,11 +664,21 @@ class KnowledgeBaseManager:
                     self.logger.debug(f"Removed document from graph search index: {components.urn}")
                 except Exception as e:
                     self.logger.error(f"Failed to update graph search index: {e}", exc_info=True)
-        
-        return {
-            "status": "deleted",
-            "message": f"Document deleted: {components.urn}"
-        }
+                    # Continue with the non-search operations
+                    
+        # Delete the document from the file system
+        try:
+            self.document_store.delete_document(components)
+            return {
+                "status": "deleted",
+                "message": f"Document deleted: {components.urn}"
+            }
+        except Exception as e:
+            self.logger.error(f"Error deleting document: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": f"Error deleting document: {str(e)}"
+            }
     
     async def create_document(self,
                           components: PathComponents,
@@ -698,21 +696,17 @@ class KnowledgeBaseManager:
             metadata: Optional document metadata
             
         Returns:
-            Document path (namespace/collection/name)
+            DocumentIndex object
             
         Raises:
             RuntimeError: If the knowledge base manager is not initialized
-            ValueError: If content already exists at the path
+            ValueError: If document already exists at the path
         """
         self.check_initialized()
         
-        # Check if content already exists
-        document_path_obj = self.document_store.base_path / components.path
-        content_path = document_path_obj / "content.txt"
-        chunk_path = document_path_obj / "content.0000.txt"
-        
-        if content_path.exists() or chunk_path.exists():
-            raise ValueError(f"Content already exists at path: {components.path}")
+        # Check if document already exists (index file exists)
+        if self.document_store.check_index(components):
+            raise ValueError(f"Document already exists at path: {components.path}")
         
         # Initialize empty metadata
         metadata_dict = metadata or {}
@@ -724,8 +718,8 @@ class KnowledgeBaseManager:
             name=components.name,
             type="document",
             subtype="text",
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
             content_type="text/plain",
             chunked=False,
             fragments={},
@@ -738,32 +732,29 @@ class KnowledgeBaseManager:
         # Create directory structure and write metadata
         self.document_store.write_index(components, index)
         
+        # Return the DocumentIndex object, not the path
         return index
     
     async def read_index(self, components: PathComponents) -> DocumentIndex:
-        """Read a document index from the knowledge base.
+        """Read document index.
         
         Args:
-            components: PathComponents with namespace, collection, and name
+            components: PathComponents for the document
             
         Returns:
-            DocumentIndex
+            DocumentIndex object
             
         Raises:
             RuntimeError: If the knowledge base manager is not initialized
-            FileNotFoundError: If the document doesn't exist
+            FileNotFoundError: If the index file doesn't exist
         """
         self.check_initialized()
         
         try:
-            # Read document metadata
-            index = self.document_store.read_index(components)
+            # Read the document index
+            return self.document_store.read_index(components)
         except FileNotFoundError:
             raise FileNotFoundError(f"Document not found: {components.urn}")
-        except Exception as e:
-            raise e
-        
-        return index
     
     async def search(self,
                      query: Optional[str] = None,
@@ -1024,9 +1015,19 @@ class KnowledgeBaseManager:
             combined.sort(key=lambda x: x.get('sparse_score', float('-inf')), reverse=True)
             self.logger.debug(f"Returning {min(len(combined), top_k_sparse)} results based on sparse scores")
             return combined[:top_k_sparse]
+        elif documents_with_content:
+            # If we have documents but no sparse scores (graph expansion case)
+            self.logger.debug("No sparse scores but have documents with content - returning all documents")
+            # Add default score of 1.0 to all documents that don't have a score
+            for doc in documents_with_content:
+                if 'sparse_score' not in doc:
+                    doc['sparse_score'] = 1.0
+            # Sort alphabetically by URN for reproducibility
+            documents_with_content.sort(key=lambda x: x['urn'])
+            return documents_with_content
         
-        # If no scores at all, just return documents in alphabetical order by URN
-        self.logger.debug("No scores available, sorting by URN")
+        # If no scores at all and no documents with content, just return documents in alphabetical order by URN
+        self.logger.debug("No scores or documents with content available, sorting by URN")
         final_results.sort(key=lambda x: x['urn'])
         return final_results[:top_k_rerank]
 
