@@ -112,13 +112,11 @@ if __name__ == "__main__":
     
     # Make sure environment variables are set (from .env file)
     # For containers, always use port 8000 internally, but bind to specified host
+    port = int(os.environ.get("MCP_PORT", config.mcp_port))
+    host = os.environ.get("MCP_HOST", config.mcp_host)
     if os.path.exists('/.dockerenv') or os.path.exists('/run/.containerenv'):
-        port = 8000  # Fixed internal port 
-        host = os.environ.get("MCP_HOST", "0.0.0.0")  # Default to all interfaces in container
-    else:
-        # For local development, use the configured port
-        port = int(os.environ.get("MCP_PORT", config.mcp_port))
-        host = os.environ.get("MCP_HOST", config.mcp_host)
+        port = 8000
+        host = os.environ.get("MCP_HOST", "0.0.0.0")
     
     # Allow command-line arguments to override environment settings
     for i, arg in enumerate(sys.argv):
