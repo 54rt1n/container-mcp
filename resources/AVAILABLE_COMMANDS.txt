@@ -1,13 +1,20 @@
-==============================================================================
-           ##   #     #    #    ### #        #    ######  #     #####       
-          #  #  #     #   # #    #  #       # #   #     # #     #           
-         #    # #     #  #   #   #  #      #   #  #     # #     #           
-         ###### #     # #     #  #  #     #     # ######  #     #####       
-         #    #  #   #  #######  #  #     ####### #     # #     #           
-         #    #   # #   #     #  #  #     #     # #     # #     #           
-         #    #    #    #     # ### ##### #     # ######  ##### #####       
-==============================================================================
-                      CONTAINER-MCP AVAILABLE COMMANDS v1.1
+curl~wget~ssh~nmap~grep~awk~sed~find~ls~cat~jq~vim~git~tar~zip~fzf~
+   __________  _   ___________    _____   ____________ ~htop~ps~tmux~
+  / ____/ __ \/ | / /_  __/   |  /  _/ | / / ____/ __ \ ~rsync~curl~
+ / /   / / / /  |/ / / / / /| |  / //  |/ / __/ / /_/ /  ~ping~dig~
+/ /___/ /_/ / /|  / / / / ___ |_/ // /|  / /___/ _, _/  ~nc~socat~
+\____/\____/_/ |_/ /_/ /_/  |_/___/_/ |_/_____/_/ |_|  ~wget~ssh~
+~strace~lsof~watch~parallel~bc~sort~uniq~cut~paste~join~comm~tree~
+    __  _____________  ~~~~╔══════════════════════════════════════════╗
+   /  |/  / ____/ __ \  ~~~║        AVAILABLE COMMANDS v1.2           ║~
+  / /|_/ / /   / /_/ / ~~~~╚══════════════════════════════════════════╝~
+ / /  / / /___/ ____/ ~nmap~sqlmap~hydra~john~openssl~gnupg~age~firejail~
+/_/  /_/\____/_/~apparmor~aircrack~hashcat~nikto~dirb~gobuster~tshark~
+~ffmpeg~imagemagick~tesseract~figlet~aspell~trans~chromium~sqlite3~
+~postgresql~redis~ansible~hugo~pandoc~ranger~neofetch~glances~iotop~
+~ripgrep~fd~bat~less~head~tail~wc~tr~yq~pigz~bzip2~xz~zstd~p7zip~unrar~
+~tmux~byobu~zsh~mtr~traceroute~whois~netstat~ss~iperf3~httpie~age~keychain~      
+
 ==============================================================================
 
 This document lists all available commands in the Container-MCP environment.

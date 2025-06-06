@@ -47,6 +47,9 @@ if not (os.path.exists('/.dockerenv') or os.path.exists('/run/.containerenv')):
     os.makedirs(os.environ["TEMP_DIR"], exist_ok=True)
 
 from mcp.server.fastmcp import FastMCP
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from cmcp.config import load_config
 from cmcp.managers.bash_manager import BashManager
@@ -60,8 +63,32 @@ from cmcp.tools import register_all_tools
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Custom FastMCP class with health endpoint
+class ContainerMCP(FastMCP):
+    """Extended FastMCP with health endpoint."""
+    
+    def sse_app(self, mount_path: str = "") -> Starlette:
+        """Create SSE app with health endpoint."""
+        # Get the original SSE app
+        app = super().sse_app(mount_path)
+        
+        # Add health endpoint
+        async def health_endpoint(request):
+            """Simple health check endpoint."""
+            return JSONResponse({
+                "status": "healthy",
+                "service": "Container-MCP",
+                "transport": "sse"
+            })
+        
+        # Add the health route to existing routes
+        health_route = Route("/health", health_endpoint, methods=["GET"])
+        app.router.routes.append(health_route)
+        
+        return app
+
 # Initialize the MCP server
-mcp = FastMCP("Container-MCP")
+mcp = ContainerMCP("Container-MCP")
 
 # Load configuration
 config = load_config()
@@ -92,6 +119,41 @@ try:
 except RuntimeError:
     # No running event loop, so run the initialization
     asyncio.run(initialize_managers())
+
+# Add a health check tool
+@mcp.tool()
+async def health_check() -> dict:
+    """Get server health status and system information."""
+    import datetime
+    import platform
+    import psutil
+    
+    # Get system information
+    system_info = {
+        "status": "healthy",
+        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "server": {
+            "name": "Container-MCP",
+            "host": config.mcp_host,
+            "port": config.mcp_port,
+            "platform": platform.platform(),
+            "python_version": platform.python_version(),
+        },
+        "system": {
+            "cpu_percent": psutil.cpu_percent(interval=1),
+            "memory_percent": psutil.virtual_memory().percent,
+            "disk_percent": psutil.disk_usage('/').percent if hasattr(psutil, 'disk_usage') else None,
+        },
+        "managers": {
+            "bash": "enabled" if config.tools_enable_system else "disabled",
+            "python": "enabled" if config.tools_enable_system else "disabled", 
+            "file": "enabled" if config.tools_enable_file else "disabled",
+            "web": "enabled" if config.tools_enable_web else "disabled",
+            "kb": "enabled" if config.tools_enable_kb else "disabled",
+        }
+    }
+    
+    return system_info
 
 # Register tools based on configuration flags
 register_all_tools(

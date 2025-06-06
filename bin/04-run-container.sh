@@ -90,7 +90,7 @@ if [ "${RUN_CONTAINER}" = "true" ]; then
     # Run the container with the --replace flag to handle existing containers
     ${CONTAINER_CMD} run -d \
         --name ${CONTAINER_NAME} \
-        -p ${LISTENER_HOST}:8080:8000 \
+        -p ${LISTENER_HOST}:8000:8000 \
         -v "$(pwd)/volume/config:/app/config:Z" \
         -v "$(pwd)/volume/logs:/app/logs:Z" \
         -v "$(pwd)/volume/data:/app/data:Z" \

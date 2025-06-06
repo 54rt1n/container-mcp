@@ -7,8 +7,8 @@ set -e
 
 # Configuration
 HOST="${HOST:-localhost}"
-PORT="${PORT:-8080}"
-SSE_ENDPOINT="/sse"
+PORT="${PORT:-8000}"
+HEALTH_ENDPOINT="/health"
 TIMEOUT="${TIMEOUT:-10}"
 
 # Colors for output
@@ -21,7 +21,7 @@ echo "Testing Container-MCP Network Connectivity"
 echo "==========================================="
 echo "Host: $HOST"
 echo "Port: $PORT"
-echo "SSE Endpoint: $SSE_ENDPOINT"
+echo "Health Endpoint: $HEALTH_ENDPOINT"
 echo "Timeout: ${TIMEOUT}s"
 echo ""
 
@@ -57,23 +57,32 @@ test_http_response() {
     fi
 }
 
-# Function to test SSE endpoint specifically
-test_sse_endpoint() {
-    echo -n "Testing SSE endpoint $HOST:$PORT$SSE_ENDPOINT... "
+# Function to test health endpoint specifically
+test_health_endpoint() {
+    echo -n "Testing health endpoint $HOST:$PORT$HEALTH_ENDPOINT... "
     
     if command -v curl >/dev/null 2>&1; then
-        # Test SSE endpoint with proper headers
-        response=$(curl -s -w "%{http_code}" -o /dev/null \
+        # Test health endpoint and get detailed response
+        response=$(curl -s -w "%{http_code}" \
             --connect-timeout $TIMEOUT \
-            -H "Accept: text/event-stream" \
-            -H "Cache-Control: no-cache" \
-            "http://$HOST:$PORT$SSE_ENDPOINT" 2>/dev/null || echo "000")
+            -H "Accept: application/json" \
+            "http://$HOST:$PORT$HEALTH_ENDPOINT" 2>/dev/null || echo "000")
         
-        if [[ "$response" =~ ^[2-5][0-9][0-9]$ ]]; then
-            echo -e "${GREEN}✓ PASS${NC} (HTTP $response)"
+        # Extract status code from response
+        status_code="${response: -3}"
+        response_body="${response%???}"
+        
+        if [[ "$status_code" =~ ^[2][0-9][0-9]$ ]]; then
+            echo -e "${GREEN}✓ PASS${NC} (HTTP $status_code)"
+            # Try to extract server status from JSON response
+            if command -v jq >/dev/null 2>&1 && echo "$response_body" | jq -e '.status' >/dev/null 2>&1; then
+                server_status=$(echo "$response_body" | jq -r '.status')
+                server_name=$(echo "$response_body" | jq -r '.server.name // "Unknown"')
+                echo "    Server: $server_name, Status: $server_status"
+            fi
             return 0
         else
-            echo -e "${RED}✗ FAIL${NC} (HTTP $response)"
+            echo -e "${RED}✗ FAIL${NC} (HTTP $status_code)"
             return 1
         fi
     else
@@ -137,9 +146,9 @@ if test_http_response; then
     test_passed=$((test_passed + 1))
 fi
 
-# Test 4: SSE Endpoint
+# Test 4: Health Endpoint
 test_total=$((test_total + 1))
-if test_sse_endpoint; then
+if test_health_endpoint; then
     test_passed=$((test_passed + 1))
 fi
 
@@ -148,6 +157,8 @@ echo ""
 echo "Test Results:"
 echo "============="
 echo "Passed: $test_passed/$test_total"
+
+python scripts/list_tools.py
 
 if [ $test_passed -eq $test_total ]; then
     echo -e "${GREEN}✓ ALL TESTS PASSED${NC}"

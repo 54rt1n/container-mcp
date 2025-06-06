@@ -2,10 +2,12 @@ from mcp.client.sse import sse_client
 from mcp import ClientSession
 import asyncio
 import json
+import argparse
 
-async def run_sse_client():
-    # Replace with your server's SSE endpoint
-    sse_url = "http://localhost:8000/sse"
+async def run_sse_client(protocol, host, port):
+    # Construct SSE URL from protocol, host and port
+    sse_url = f"{protocol}://{host}:{port}/sse"
+    print(f"Connecting to: {sse_url}")
 
     # Connect to the SSE endpoint
     async with sse_client(sse_url) as (read, write):
@@ -43,4 +45,11 @@ async def run_sse_client():
                 print()  # Empty line between tools
 
 if __name__ == "__main__":
-    asyncio.run(run_sse_client())
+    parser = argparse.ArgumentParser(description="List MCP tools from a server")
+    parser.add_argument("--protocol", default="http", choices=["http", "https"], help="Protocol to use (default: http)")
+    parser.add_argument("--host", default="localhost", help="Server host (default: localhost)")
+    parser.add_argument("--port", type=int, default=8000, help="Server port (default: 8000)")
+    
+    args = parser.parse_args()
+    
+    asyncio.run(run_sse_client(args.protocol, args.host, args.port))

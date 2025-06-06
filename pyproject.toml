@@ -64,6 +64,9 @@ dependencies = [
     # Search capabilities
     "tantivy>=0.22.2",
     "sentence-transformers>=4.0.1",
+    
+    # System monitoring
+    "psutil>=7.0.0",
 ]
 
 [project.optional-dependencies]
