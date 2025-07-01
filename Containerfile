@@ -152,6 +152,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+RUN GOBIN=/usr/local/bin go install github.com/eliukblau/pixterm/cmd/pixterm@latest
+
 # Setup Python virtual environment using uv
 RUN python3.12 -m venv /app/.venv
 RUN /app/.venv/bin/pip install --upgrade pip setuptools wheel

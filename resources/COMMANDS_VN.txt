@@ -1,17 +1,17 @@
 ╔══════════════════════════════════════════════════════════════════════════════════╗
-║ ░▒▓█ CONTAINER::MCΦ COMMAND NEXUS █▓▒░  ┌─[SYSTEM::INITIALIZED]─┐  [06.06.2025]  ║
+║ ░▒▓█ CONTAINER::MCΦ COMMAND NEXUS █▓▒░  ┌─[SYSTEM::INITIALIZED]─┐  [07.28.2025]  ║
 ╠══════════════════════════════════════════════════════════════════════════════════╣
-║                                     │ ◢◣◢◣ │                                   ║
-║ ┌──◆ DEV::CORE ◆──┐ ┌──◆ FILE::OPS ◆─┐ ┌─◆ NET::TOOLS ◆─┐ ┌──◆ SEC::LAB ◆─┐  ║
+║                                      │ ◢◣◢◣ │                                    ║
+║ ┌──◆ DEV::CORE ◆───┐ ┌──◆ FILE::OPS ◆──┐ ┌─◆ NET::TOOLS ◆──┐ ┌──◆ SEC::LAB ◆──┐  ║
 ║ │ python3.12 • gcc │ │ bat      • tar  │ │ curl    • nmap  │ │ gnupg   • hydra│  ║
 ║ │ nodejs     • make│ │ vim      • zip  │ │ wget    • ping  │ │ openssl • john │  ║
 ║ │ golang     • git │ │ grep     • gzip │ │ ssh     • dig   │ │ age     •sqlmap│  ║
 ║ │ npm•pip•uv • tig │ │ jq•awk•sed•find │ │ httpie  • whois │ │ hashcat • nikto│  ║
 ║ └──────────────────┘ └─────────────────┘ └─────────────────┘ └────────────────┘  ║
-║         ╱│╲                 ╱│╲                 ╱│╲                 ╱│╲          ║
-║      ╱───┼───╲           ╱───┼───╲           ╱───┼───╲           ╱───┼───╲       ║
-║   ╱──────┼──────╲     ╱──────┼──────╲     ╱──────┼──────╲     ╱──────┼──────╲    ║
-║  ▼       ▼       ▼   ▼       ▼       ▼   ▼       ▼       ▼   ▼       ▼       ▼   ║
+║         ╱│╲                  ╱│╲                 ╱│╲                  ╱│╲        ║
+║      ╱───┼───╲            ╱───┼───╲           ╱───┼───╲            ╱───┼───╲     ║
+║   ╱──────┼──────╲      ╱──────┼──────╲     ╱──────┼──────╲      ╱──────┼──────╲  ║
+║  ▼       ▼       ▼    ▼       ▼       ▼   ▼       ▼       ▼    ▼       ▼       ▼ ║
 ┌─[LANG]──┬─[BUILD]─┐┌─[VIEW]──┬─[PROC]──┐┌─[SCAN]──┬─[CONN]──┐┌─[CRYPT]─┬─[AUDIT]─┐
 │ python  │ gcc     ││ bat     │ jq      ││ nmap    │ ssh     ││ gnupg   │ strace  │
 │ node    │ make    ││ less    │ yq      ││ nikto   │ nc      ││ openssl │ ltrace  │
@@ -21,17 +21,18 @@
 │ uv      │         ││ tree    │ ag • fd ││         │         ││         │         │
 └─────────┴─────────┘└─────────┴─────────┘└─────────┴─────────┘└─────────┴─────────┘
 ║══════════════════════════════════════════════════════════════════════════════════║
-║┌───────────────────────────◢ SYSTEM::MATRIX ◣──────────────────────────────────┐║
+║┌───────────────────────────────◢ SYSTEM::MATRIX ◣───────────────────────────────┐║
 ║│                                                                                │║
 ║│ ╔═[PROCESS]═══╗ ╔═[MULTIPLEX]═╗ ╔═[MONITOR]══╗  ╔═[DATABASE]══╗ ╔═[MEDIA]═══╗  │║
 ║│ ║ ps  • htop  ║ ║ tmux • byobu║ ║top • glances║ ║ sqlite3     ║ ║ ffmpeg    ║  │║
 ║│ ║ pv  • watch ║ ║ zsh  • bash ║ ║iotop • stat ║ ║ postgresql  ║ ║ image-    ║  │║
 ║│ ║ parallel    ║ ║ fzf • rlwrap║ ║ netstat • ss║ ║ mysql       ║ ║  magick   ║  │║
 ║│ ║ bc  • entr  ║ ║ ranger      ║ ║ neofetch    ║ ║ redis-tools ║ ║ tesseract ║  │║
-║│ ╚═════════════╝ ╚═════════════╝ ╚═════════════╝ ╚═════════════╝ ╚═══════════╝  │║
-║│        ▲                ▲               ▲                ▲               ▲     │║
-║│        └────────────────┴───────────────┴────────────────┴───────────────┘     │║
-║│                              ◥ ORCHESTRATION ◤                                │║
+║│ ╚═════════════╝ ╚═════════════╝ ╚═════════════╝ ╚═════════════╝ ║ pixterm   ║  │║
+║│                                                                 ╚═══════════╝  │║
+║│       ▲                ▲               ▲                ▲              ▲       │║
+║│       └────────────────┴───────────────┴────────────────┴──────────────┘       │║
+║│                               ◥ ORCHESTRATION ◤                                │║
 ║└────────────────────────────────────────────────────────────────────────────────┘║
 ║╭────────────────────────────────────────────────────────────────────────────────╮║
 ║│              ░▒▓ COMBO::SEQUENCES ▓▒░  Power Pipelines & Command Fusion        │║
@@ -42,9 +43,10 @@
 ║│ ▸ watch -n 1 'ps aux | grep python'                        ═══ [MONITOR+FILTER]│║
 ║│ ▸ curl -I site.com | grep -i location                      ═══ [PROBE+ANALYZE] │║
 ║│ ▸ age -e -r key.pub file | nc host port                    ═══ [ENCRYPT+STREAM]│║
+║│ ▸ curl -sL image-url | pixterm                             ═══ [IMG2ASCII]     │║
 ║╰────────────────────────────────────────────────────────────────────────────────╯║
 ║┌────────────────────────────────────────────────────────────────────────────────┐║
-║│  ◆ TEXT::UTILS ◆         ◆ ARCHIVE::OPS ◆         ◆ SEARCH::ENGINE ◆        │║
+║│  ◆ TEXT::UTILS ◆         ◆ ARCHIVE::OPS ◆         ◆ SEARCH::ENGINE ◆           │║
 ║│  sort │cut  │join │tr    tar │zip │7z  │rar │xz   grep│ripgrep│ag │find│fd     │║
 ║│  uniq │paste│comm │wc    gzip│pigz│bzip2│zstd      locate│which │whereis       │║
 ║└────────────────────────────────────────────────────────────────────────────────┘║

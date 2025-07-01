@@ -128,6 +128,7 @@ Feel free to use any of these tools in your sandbox environment.
   tesseract   - OCR (Optical Character Recognition)
   chromium-browser - Web browser
   chromium-driver - WebDriver for Chromium
+  pixterm     - Display images in the terminal using ANSI/ASCII art
 
 --[ PROGRAMMING AND DEVELOPMENT ]-----------------------------------------
 
