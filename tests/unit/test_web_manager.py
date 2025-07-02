@@ -59,20 +59,30 @@ async def test_browse_webpage(mock_playwright, web_manager):
     
     mock_playwright.return_value.__aenter__.return_value = mock_playwright_instance
     
-    # Call browse_webpage
-    result = await web_manager.browse_webpage("https://example.com/test")
-    
-    # Verify the result
-    assert result.success is True
-    assert result.content == "<html><body>Test Content</body></html>"
-    assert result.title == "Test Page"
-    assert result.url == "https://example.com/test"
-    
-    # Verify Playwright was called correctly
-    mock_playwright_instance.chromium.launch.assert_called_once_with(headless=True)
-    mock_page.goto.assert_called_once()
-    mock_page.title.assert_called_once()
-    mock_page.content.assert_called_once()
+    try:
+        # Call browse_webpage
+        result = await web_manager.browse_webpage("https://example.com/test")
+        
+        # Verify the result
+        assert result.success is True
+        assert result.content == "<html><body>Test Content</body></html>"
+        assert result.title == "Test Page"
+        assert result.url == "https://example.com/test"
+        
+        # Verify Playwright was called correctly
+        mock_playwright_instance.chromium.launch.assert_called_once_with(headless=True)
+        mock_page.goto.assert_called_once()
+        mock_page.title.assert_called_once()
+        mock_page.content.assert_called_once()
+        
+        # Ensure the mocked cleanup methods were called
+        mock_context.close.assert_called_once()
+        mock_browser.close.assert_called_once()
+        
+    finally:
+        # Brief delay to allow any subprocess cleanup to complete
+        # This prevents the event loop from closing while cleanup is pending
+        await asyncio.sleep(0.05)
 
 
 @pytest.mark.asyncio
