@@ -23,6 +23,121 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
         mcp: The MCP instance
         kb_manager: The knowledge base manager instance
     """
+
+    # Register knowledge base document resource handler
+    @mcp.resource("kb://{path}")
+    async def get_kb_document(path: str) -> str:
+        """Get knowledge base document contents as a resource.
+        
+        Args:
+            path: Document path
+            
+        Returns:
+            Document content as string
+        """
+        try:
+            # Parse the path
+            components = PathComponents.parse_path(f"kb://{path}")
+            
+            # Read the document using components
+            document = await kb_manager.read_content(components)
+            
+            return document
+        except Exception as e:
+            logger.error(f"Error getting document content: {e}", exc_info=True, stack_info=True)
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+    
+    @mcp.tool()
+    async def kb_list_documents(path: Optional[str] = None,
+                              recursive: bool = True) -> Dict[str, Any]:
+        """List documents in the knowledge base.
+        
+        Args:
+            path: Optional path prefix to filter by
+            recursive: Whether to list recursively
+            
+        Returns:
+            Dictionary with list of document locations
+        """
+        try:
+            components = None
+            
+            if path:
+                # Parse the path to get namespace/collection
+                components = PartialPathComponents.parse_path(path)
+            
+            # List documents using components
+            documents = await kb_manager.list_documents(
+                components=components,
+                recursive=recursive
+            )
+            
+            return {"documents": documents, "count": len(documents)}
+        except ValueError as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+        except Exception as e:
+            logger.error(f"Error listing documents: {e}", exc_info=True, stack_info=True)
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
+    @mcp.tool()
+    async def kb_search(query: Optional[str] = None,
+                      graph_seed_urns: Optional[List[str]] = None,
+                      graph_expand_hops: int = 0,
+                      filter_urns: Optional[List[str]] = None,
+                      relation_predicates: Optional[List[str]] = None,
+                      top_k: int = 10,
+                      include_content: bool = False,
+                      include_index: bool = False,
+                      use_reranker: bool = True) -> Dict[str, Any]:
+        """Search the knowledge base using text query and/or graph expansion.
+
+        Args:
+            query: Text query for sparse search and reranking.
+            graph_seed_urns: List of starting URNs for graph expansion/filtering.
+            graph_expand_hops: Number of hops to expand graph relationships (default 0).
+            filter_urns: List of URNs to exclude from search results.
+            relation_predicates: List of predicates to follow during graph traversal (default is "references").
+            top_k: Number of results to return (after reranking if enabled).
+            include_content: Whether to include document content in results (default False).
+            include_index: Whether to include document index/metadata in results (default False).
+            use_reranker: Whether to use semantic reranking (default True).
+
+        Returns:
+            Dictionary containing ranked list of document results.
+        """
+        try:
+            # Decide sparse k based on reranking needs - fetch more initially
+            top_k_sparse = max(50, top_k * 2) if use_reranker and query else top_k
+
+            results = await kb_manager.search(
+                query=query,
+                graph_seed_urns=graph_seed_urns,
+                graph_expand_hops=graph_expand_hops,
+                filter_urns=filter_urns,
+                relation_predicates=relation_predicates,
+                top_k_sparse=top_k_sparse,
+                top_k_rerank=top_k,  # Final desired K
+                include_content=include_content,
+                include_index=include_index,
+                use_reranker=use_reranker
+            )
+            return {"results": results, "count": len(results)}
+        except ValueError as e:
+            return {"status": "error", "error": str(e)}
+        except RuntimeError as e:
+            return {"status": "error", "error": str(e)}
+        except Exception as e:
+            logger.error(f"Error during kb_search: {e}", exc_info=True)
+            return {"status": "error", "error": f"An unexpected error occurred: {str(e)}"}
     
     @mcp.tool()
     async def kb_create_document(path: str,
@@ -129,6 +244,78 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
             }
     
     @mcp.tool()
+    async def kb_read(path: str, 
+                     include_content: bool = True,
+                     include_index: bool = True) -> Dict[str, Any]:
+        """Read document data from the knowledge base.
+        
+        Args:
+            path: Document path in format "namespace/collection[/subcollection]*/name"
+            include_content: Whether to include document content in the response
+            include_index: Whether to include document index/metadata in the response
+            
+        Returns:
+            Dictionary with document data based on requested components
+        """
+        try:
+            # Validate that at least one component is requested
+            if not include_content and not include_index:
+                return {
+                    "status": "error",
+                    "error": "At least one of include_content or include_index must be True"
+                }
+            
+            # Parse the path
+            components = PathComponents.parse_path(path)
+            
+            result = {
+                "status": "success",
+                "path": path
+            }
+            
+            # Read index if requested
+            if include_index:
+                try:
+                    index = await kb_manager.read_index(components)
+                    result["index"] = index.model_dump()
+                except FileNotFoundError as e:
+                    return {
+                        "status": "error",
+                        "error": f"Document index not found: {str(e)}"
+                    }
+            
+            # Read content if requested
+            if include_content:
+                try:
+                    content = await kb_manager.read_content(components)
+                    result["content"] = content
+                except FileNotFoundError as e:
+                    # If index was successfully read but content is missing, 
+                    # return partial success with a warning
+                    if include_index and "index" in result:
+                        result["content"] = None
+                        result["content_warning"] = f"Content not found: {str(e)}"
+                    else:
+                        return {
+                            "status": "error",
+                            "error": f"Document content not found: {str(e)}"
+                        }
+            
+            return result
+            
+        except ValueError as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+        except Exception as e:
+            logger.error(f"Error reading document at {path}: {e}", exc_info=True, stack_info=True)
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
+    @mcp.tool()
     async def kb_update_metadata(path: str,
                                metadata: Dict[str, Any]) -> Dict[str, Any]:
         """Update metadata for a document in the knowledge base.
@@ -167,397 +354,238 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                 "status": "error",
                 "error": str(e)
             }
-    
-    @mcp.tool()
-    async def kb_read_index(path: str) -> Dict[str, Any]:
-        """Read a document index from the knowledge base.
-        
-        Args:
-            path: Document path in format "namespace/collection[/subcollection]*/name"
-            
-        Returns:
-            Dictionary with document content, metadata, and optional nextChunkNum
-        """
-        try:
-            # Parse the path
-            components = PathComponents.parse_path(path)
-            
-            # Read the document using components
-            index = await kb_manager.read_index(components)
-            
-            return index.model_dump()
-        except ValueError as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-        except Exception as e:
-            logger.error(f"Error reading document at {path}: {e}", exc_info=True, stack_info=True)
-            return {
-                "status": "error",
-                "error": str(e)
-            }
 
     @mcp.tool()
-    async def kb_read_content(path: str) -> Dict[str, Any]:
-        """Read content from a document in the knowledge base.
+    async def kb_manage_triples(action: str,
+                               triple_type: str,
+                               path: str,
+                               predicate: str,
+                               object: Optional[str] = None,
+                               ref_path: Optional[str] = None) -> Dict[str, Any]:
+        """Manage RDF triples (preferences and references) for documents.
         
         Args:
-            path: Document path in format "namespace/collection[/subcollection]*/name"
-            
-        Returns:
-            Dictionary with document content and metadata
-        """
-        try:
-            # Parse the path
-            components = PathComponents.parse_path(path)
-            
-            # Read the document using components
-            content = await kb_manager.read_content(components)
-            
-            return {
-                "status": "success",
-                "content": content,
-                "path": path
-            }
-        except ValueError as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-        except Exception as e:
-            logger.error(f"Error reading content from {path}: {e}", exc_info=True, stack_info=True)
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-
-    @mcp.tool()
-    async def kb_add_preference(path: str,
-                              predicate: str,
-                              object: str) -> Dict[str, Any]:
-        """Add a preference triple to a document.
-        
-        Args:
-            path: Document path (which becomes the subject of the triple)
-            predicate: Predicate of the preference triple
-            object: Object of the preference triple
-            
-        Returns:
-            Dictionary with status and updated preference count
-        """
-        try:
-            # Parse the path
-            components = PathComponents.parse_path(path)
-            
-            # Create triple with the document URN as subject
-            preferences = [ImplicitRDFTriple(predicate=predicate, object=object)]
-            
-            # Add preference using components
-            result = await kb_manager.add_preference(
-                components=components,
-                preferences=preferences
-            )
-            
-            return result
-        except ValueError as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-        except Exception as e:
-            logger.error(f"Error adding preference: {e}", exc_info=True, stack_info=True)
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-    
-    @mcp.tool()
-    async def kb_remove_preference(path: str,
-                                 predicate: str,
-                                 object: str) -> Dict[str, Any]:
-        """Remove a preference triple from a document.
-        
-        Args:
-            path: Document path (which is the subject of the triple)
-            predicate: Predicate of the preference triple to remove
-            object: Object of the preference triple to remove
-            
-        Returns:
-            Dictionary with status and remaining preference count
-        """
-        try:
-            # Parse the path
-            components = PathComponents.parse_path(path)
-            
-            # Create triple with the document URN as subject
-            preferences = [ImplicitRDFTriple(predicate=predicate, object=object)]
-            
-            # Remove preference using components
-            result = await kb_manager.remove_preference(
-                components=components,
-                preferences=preferences
-            )
-            
-            return result
-        except ValueError as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-    
-    @mcp.tool()
-    async def kb_add_reference(path: str,
-                             ref_path: str,
-                             relation: str) -> Dict[str, Any]:
-        """Add a reference to another document.
-        
-        Args:
+            action: Action to perform ("add" or "remove")
+            triple_type: Type of triple ("preference" or "reference")
             path: Source document path
-            ref_path: Referenced document path
-            relation: Relation predicate connecting the documents
+            predicate: Predicate of the triple
+            object: Object of the triple (for preferences) or relation name (for references)
+            ref_path: Referenced document path (for references only)
             
         Returns:
-            Dictionary with status and updated reference count
+            Dictionary with status and operation results
         """
         try:
-            # Parse both paths
-            components = PathComponents.parse_path(path)
-            ref_components = PathComponents.parse_path(ref_path)
+            # Validate action
+            if action not in ["add", "remove"]:
+                return {
+                    "action": action,
+                    "triple_type": triple_type,
+                    "status": "error",
+                    "error": f"Invalid action: {action}. Must be 'add' or 'remove'"
+                }
             
-            # Add reference using components
-            result = await kb_manager.add_reference(
-                components=components,
-                ref_components=ref_components,
-                relation=relation
-            )
+            # Validate triple_type
+            if triple_type not in ["preference", "reference"]:
+                return {
+                    "action": action,
+                    "triple_type": triple_type,
+                    "status": "error",
+                    "error": f"Invalid triple_type: {triple_type}. Must be 'preference' or 'reference'"
+                }
             
-            return result
-        except ValueError as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-        except Exception as e:
-            logger.error(f"Error adding reference: {e}", exc_info=True, stack_info=True)
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-    
-    @mcp.tool()
-    async def kb_remove_reference(path: str,
-                                ref_path: str,
-                                relation: str) -> Dict[str, Any]:
-        """Remove references from a document matching the specified attributes.
-        
-        Args:
-            path: Source document path
-            ref_path: Referenced document path
-            relation: Relation predicate
-            
-        Returns:
-            Dictionary with status and remaining reference count
-        """
-        try:
-            # Parse both paths
-            components = PathComponents.parse_path(path)
-            ref_components = PathComponents.parse_path(ref_path)
-            
-            # Remove reference using components
-            result = await kb_manager.remove_reference(
-                components=components,
-                ref_components=ref_components,
-                relation=relation
-            )
-            
-            return result
-        except ValueError as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-        except Exception as e:
-            logger.error(f"Error removing reference: {e}", exc_info=True, stack_info=True)
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-    
-    @mcp.tool()
-    async def kb_list_documents(path: Optional[str] = None,
-                              recursive: bool = True) -> Dict[str, Any]:
-        """List documents in the knowledge base.
-        
-        Args:
-            path: Optional path prefix to filter by
-            recursive: Whether to list recursively
-            
-        Returns:
-            Dictionary with list of document locations
-        """
-        try:
-            components = None
-            
-            if path:
-                # Parse the path to get namespace/collection
-                components = PartialPathComponents.parse_path(path)
-            
-            # List documents using components
-            documents = await kb_manager.list_documents(
-                components=components,
-                recursive=recursive
-            )
-            
-            return {"documents": documents, "count": len(documents)}
-        except ValueError as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-        except Exception as e:
-            logger.error(f"Error listing documents: {e}", exc_info=True, stack_info=True)
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-    
-    @mcp.tool()
-    async def kb_move_document(path: str,
-                             new_path: str) -> Dict[str, Any]:
-        """Move a document to a new location in the knowledge base.
-        
-        Args:
-            path: Current document path
-            new_path: New document path
-            
-        Returns:
-            Dictionary with old and new document locations
-        """
-        try:
-            # Parse both paths
-            old_components = PathComponents.parse_path(path)
-            new_components = PathComponents.parse_path(new_path)
-            
-            # Move document using components
-            index = await kb_manager.move_document(
-                components=old_components,
-                new_components=new_components
-            )
-            
-            return index.model_dump()
-        except ValueError as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-        except Exception as e:
-            logger.error(f"Error moving document: {e}", exc_info=True, stack_info=True)
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-    
-    @mcp.tool()
-    async def kb_delete_document(path: str) -> Dict[str, Any]:
-        """Delete a document from the knowledge base.
-        
-        Args:
-            path: Document path in format "namespace/collection[/subcollection]*/name"
-            
-        Returns:
-            Dictionary with deleted document information and status
-        """
-        try:
-            # Parse the path
+            # Parse the source path
             components = PathComponents.parse_path(path)
             
-            # Delete the document using components
-            result = await kb_manager.delete_document(components)
+            # Handle preferences
+            if triple_type == "preference":
+                if object is None:
+                    return {
+                        "action": action,
+                        "triple_type": triple_type,
+                        "status": "error",
+                        "error": "object parameter is required for preference triples"
+                    }
+                
+                # Create preference triple
+                preferences = [ImplicitRDFTriple(predicate=predicate, object=object)]
+                
+                if action == "add":
+                    result = await kb_manager.add_preference(
+                        components=components,
+                        preferences=preferences
+                    )
+                else:  # remove
+                    result = await kb_manager.remove_preference(
+                        components=components,
+                        preferences=preferences
+                    )
+            
+            # Handle references
+            elif triple_type == "reference":
+                if ref_path is None:
+                    return {
+                        "action": action,
+                        "triple_type": triple_type,
+                        "status": "error",
+                        "error": "ref_path parameter is required for reference triples"
+                    }
+                
+                # Parse the referenced path
+                ref_components = PathComponents.parse_path(ref_path)
+                
+                # Use predicate as the relation name for references
+                relation = predicate
+                
+                if action == "add":
+                    result = await kb_manager.add_reference(
+                        components=components,
+                        ref_components=ref_components,
+                        relation=relation
+                    )
+                else:  # remove
+                    result = await kb_manager.remove_reference(
+                        components=components,
+                        ref_components=ref_components,
+                        relation=relation
+                    )
+            
+            # Add action and triple_type to result for context
+            result.update({
+                "action": action,
+                "triple_type": triple_type
+            })
             
             return result
+            
         except ValueError as e:
             return {
-                "status": "error",
-                "error": str(e)
-            }
-        except FileNotFoundError as e:
-            return {
+                "action": action,
+                "triple_type": triple_type,
                 "status": "error",
                 "error": str(e)
             }
         except Exception as e:
-            logger.error(f"Error deleting document: {e}", exc_info=True, stack_info=True)
+            logger.error(f"Error managing {triple_type} {action}: {e}", exc_info=True, stack_info=True)
             return {
+                "action": action,
+                "triple_type": triple_type,
                 "status": "error",
                 "error": str(e)
             }
     
-    # Register knowledge base document resource handler
-    @mcp.resource("kb://{path}")
-    async def get_kb_document(path: str) -> str:
-        """Get knowledge base document contents as a resource.
+
+
+    @mcp.tool()
+    async def kb_manage(action: str, **kwargs) -> Dict[str, Any]:
+        """Manage knowledge base operations like rebuilding search indices and moving documents.
         
         Args:
-            path: Document path
+            action: Management action to perform. Supported actions:
+                   - "rebuild_search_index": Rebuild search indices from scratch
+                     Parameters: rebuild_all (bool, default: True)
+                   - "move_document": Move a document to a new location
+                     Parameters: path (str, required), new_path (str, required)
+                   - "delete": Archive a document
+                     Parameters: path (str, required)
+            **kwargs: Additional parameters for the specific action
             
         Returns:
-            Document content as string
+            Dictionary with operation status and results
         """
         try:
-            # Parse the path
-            components = PathComponents.parse_path(f"kb://{path}")
+            if action == "rebuild_search_index":
+                rebuild_all = kwargs.get("rebuild_all", True)
+                result = await kb_manager.recover_search_indices(rebuild_all=rebuild_all)
+                return {
+                    "action": action,
+                    "status": "success",
+                    "result": result
+                }
             
-            # Read the document using components
-            document = await kb_manager.read_content(components)
+            elif action == "move_document":
+                # Validate required parameters
+                path = kwargs.get("path")
+                new_path = kwargs.get("new_path")
+                
+                if not path:
+                    return {
+                        "action": action,
+                        "status": "error",
+                        "error": "path parameter is required for move_document action"
+                    }
+                
+                if not new_path:
+                    return {
+                        "action": action,
+                        "status": "error",
+                        "error": "new_path parameter is required for move_document action"
+                    }
+                
+                # Parse both paths
+                old_components = PathComponents.parse_path(path)
+                new_components = PathComponents.parse_path(new_path)
+                
+                # Move document using components
+                index = await kb_manager.move_document(
+                    components=old_components,
+                    new_components=new_components
+                )
+                
+                return {
+                    "action": action,
+                    "status": "success",
+                    "old_path": path,
+                    "new_path": new_path,
+                    "result": index.model_dump()
+                }
             
-            return document
-        except Exception as e:
-            logger.error(f"Error getting document content: {e}", exc_info=True, stack_info=True)
+            elif action == "delete":
+                # Validate required parameters
+                path = kwargs.get("path")
+                
+                if not path:
+                    return {
+                        "action": action,
+                        "status": "error",
+                        "error": "path parameter is required for delete action"
+                    }
+                
+                # Parse the path
+                components = PathComponents.parse_path(path)
+                
+                # Archive document (removes from indices and moves to archive)
+                result = await kb_manager.archive_document(components)
+                
+                return {
+                    "action": action,
+                    "status": "success",
+                    "path": path,
+                    "result": result
+                }
+            
+            else:
+                return {
+                    "action": action,
+                    "status": "error", 
+                    "error": f"Unknown action: {action}. Supported actions: rebuild_search_index, move_document, delete"
+                }
+        except ValueError as e:
             return {
-                "status": "error",
+                "action": action,
+                "status": "error", 
                 "error": str(e)
             }
-
-    # Add the kb_search tool at the end of the function
-    @mcp.tool()
-    async def kb_search(query: Optional[str] = None,
-                      graph_filter_urns: Optional[List[str]] = None,
-                      graph_expand_hops: int = 0,
-                      relation_predicates: Optional[List[str]] = None,
-                      top_k: int = 10,
-                      use_reranker: bool = True) -> Dict[str, Any]:
-        """Search the knowledge base using text query and/or graph expansion.
-
-        Args:
-            query: Text query for sparse search and reranking.
-            graph_filter_urns: List of starting URNs for graph expansion/filtering.
-            graph_expand_hops: Number of hops to expand graph relationships (default 0).
-            relation_predicates: List of predicates to follow during graph traversal (default is "references").
-            top_k: Number of results to return (after reranking if enabled).
-            use_reranker: Whether to use semantic reranking (default True).
-
-        Returns:
-            Dictionary containing ranked list of document results.
-        """
-        try:
-            # Decide sparse k based on reranking needs - fetch more initially
-            top_k_sparse = max(50, top_k * 2) if use_reranker and query else top_k
-
-            results = await kb_manager.search(
-                query=query,
-                graph_filter_urns=graph_filter_urns,
-                graph_expand_hops=graph_expand_hops,
-                relation_predicates=relation_predicates,
-                top_k_sparse=top_k_sparse,
-                top_k_rerank=top_k,  # Final desired K
-                use_reranker=use_reranker
-            )
-            return {"results": results, "count": len(results)}
-        except ValueError as e:
-            return {"status": "error", "error": str(e)}
         except RuntimeError as e:
-            return {"status": "error", "error": str(e)}
+            return {
+                "action": action,
+                "status": "error", 
+                "error": str(e)
+            }
         except Exception as e:
-            logger.error(f"Error during kb_search: {e}", exc_info=True)
-            return {"status": "error", "error": f"An unexpected error occurred: {str(e)}"}
+            logger.error(f"Error during kb_manage action '{action}': {e}", exc_info=True)
+            return {
+                "action": action,
+                "status": "error", 
+                "error": f"An unexpected error occurred: {str(e)}"
+            }

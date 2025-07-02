@@ -682,10 +682,187 @@ class KnowledgeBaseManager:
         except Exception as e:
             self.logger.error(f"Failed to update referenced_by for moved document: {e}")
         
+        # Update search indices with the new URN
+        if self.search_enabled:
+            # Update sparse search index if document has content
+            try:
+                content = await self.read_content(new_components)
+                if content and self.sparse_search_index:
+                    self.logger.debug(f"Updating sparse search index for moved document: {old_urn} -> {new_urn}")
+                    
+                    async with self.sparse_index_lock:
+                        await asyncio.to_thread(
+                            self._update_moved_document_sparse_sync,
+                            old_urn,
+                            new_urn,
+                            content
+                        )
+                    
+                    self.logger.debug(f"Updated sparse search index for moved document: {new_urn}")
+            except Exception as e:
+                self.logger.error(f"Failed to update sparse search index for moved document: {e}", exc_info=True)
+            
+            # Update graph search index for all triples involving this document
+            if self.graph_search_index:
+                try:
+                    self.logger.debug(f"Updating graph search index for moved document: {old_urn} -> {new_urn}")
+                    
+                    async with self.graph_index_lock:
+                        await asyncio.to_thread(
+                            self._update_moved_document_graph_sync,
+                            old_urn,
+                            new_urn
+                        )
+                    
+                    self.logger.debug(f"Updated graph search index for moved document: {new_urn}")
+                except Exception as e:
+                    self.logger.error(f"Failed to update graph search index for moved document: {e}", exc_info=True)
+        
         self.logger.info(f"Moved document: {components.path} → {new_components.path}")
         
         return index
         
+    async def archive_document(self, components: PathComponents) -> Dict[str, Any]:
+        """Archive a document by removing it from indices and moving it to archive location.
+        
+        This removes the document from search indices, cleans up bidirectional references,
+        and moves the document to archive/<path> instead of permanently deleting it.
+        
+        Args:
+            components: PathComponents for the document
+            
+        Returns:
+            Operation status with archive location
+            
+        Raises:
+            RuntimeError: If the knowledge base manager is not initialized
+        """
+        self.check_initialized()
+        
+        # Check if document exists before trying to archive it
+        try:
+            exists = self.document_store.check_index(components)
+            if not exists:
+                return {
+                    "status": "not_found",
+                    "message": f"Document not found: {components.urn}"
+                }
+        except Exception as e:
+            self.logger.error(f"Error checking document existence: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": f"Error checking document: {str(e)}"
+            }
+        
+        # Read document index for reference cleanup
+        try:
+            index = self.document_store.read_index(components)
+        except Exception as e:
+            self.logger.error(f"Error reading document index: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": f"Error reading document: {str(e)}"
+            }
+        
+        # Clean up references TO other documents (and their reverse references)
+        for ref in index.references:
+            try:
+                ref_components = PathComponents.parse_path(ref.object)
+                ref_index = self.document_store.read_index(ref_components)
+                
+                # Remove the reverse reference from the target document
+                reverse_triple = ImplicitRDFTriple(predicate=ref.predicate, object=components.urn)
+                updated_referenced_by = [r for r in ref_index.referenced_by if r != reverse_triple]
+                
+                if len(updated_referenced_by) != len(ref_index.referenced_by):
+                    self.document_store.update_index(ref_components, {"referenced_by": updated_referenced_by})
+                    self.logger.debug(f"Removed reverse reference from {ref_components.urn}")
+                    
+            except Exception as e:
+                self.logger.warning(f"Failed to clean up reverse reference for {ref.object}: {e}")
+        
+        # Clean up references FROM other documents that point to this document
+        # Note: We keep the local referenced_by entries in the archived document for reference
+        for reverse_ref in index.referenced_by:
+            try:
+                referencing_components = PathComponents.parse_path(reverse_ref.object)
+                referencing_index = self.document_store.read_index(referencing_components)
+                
+                # Remove the reference from the referencing document
+                reference_to_remove = ImplicitRDFTriple(predicate=reverse_ref.predicate, object=components.urn)
+                updated_references = [r for r in referencing_index.references if r != reference_to_remove]
+                
+                if len(updated_references) != len(referencing_index.references):
+                    self.document_store.update_index(referencing_components, {"references": updated_references})
+                    self.logger.debug(f"Removed reference from {referencing_components.urn}")
+                    
+            except Exception as e:
+                self.logger.warning(f"Failed to clean up reference from {reverse_ref.object}: {e}")
+        
+        # Remove from search indices if enabled
+        if self.search_enabled:
+            # Remove from sparse search index
+            if self.sparse_search_index:
+                try:
+                    self.logger.debug(f"Removing document from sparse search index: {components.urn}")
+                    
+                    async with self.sparse_index_lock:
+                        await asyncio.to_thread(
+                            self._delete_sparse_index_sync,
+                            components.urn
+                        )
+                        
+                    self.logger.debug(f"Removed document from sparse search index: {components.urn}")
+                except Exception as e:
+                    self.logger.error(f"Failed to update sparse search index: {e}", exc_info=True)
+                    # Continue with archiving even if search update fails
+            
+            # Remove from graph search index
+            if self.graph_search_index:
+                try:
+                    self.logger.debug(f"Removing document from graph search index: {components.urn}")
+                    
+                    async with self.graph_index_lock:
+                        await asyncio.to_thread(
+                            self._delete_document_from_graph_sync,
+                            components.urn
+                        )
+                        
+                    self.logger.debug(f"Removed document from graph search index: {components.urn}")
+                except Exception as e:
+                    self.logger.error(f"Failed to update graph search index: {e}", exc_info=True)
+                    # Continue with archiving even if search update fails
+        
+        # Create archive path - prepend "archive/" to the original path
+        archive_components = PathComponents(
+            namespace="archive",
+            collection=components.namespace,
+            subcollections=components.subcollections + [components.collection] if components.subcollections else [components.collection],
+            name=components.name
+        )
+        
+        # Move the document to archive location
+        try:
+            self.document_store.move_document(components, archive_components)
+            archive_path = archive_components.path
+            
+            self.logger.info(f"Archived document: {components.path} → {archive_path}")
+            
+            return {
+                "status": "archived",
+                "message": f"Document archived: {components.urn}",
+                "original_path": components.path,
+                "archive_path": archive_path,
+                "archive_urn": archive_components.urn
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error archiving document: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": f"Error archiving document: {str(e)}"
+            }
+    
     async def delete_document(self, components: PathComponents) -> Dict[str, Any]:
         """Delete a document from the knowledge base.
         
@@ -887,22 +1064,30 @@ class KnowledgeBaseManager:
     
     async def search(self,
                      query: Optional[str] = None,
-                     graph_filter_urns: Optional[List[str]] = None,
+                     graph_seed_urns: Optional[List[str]] = None,
                      graph_expand_hops: int = 0,
                      relation_predicates: Optional[List[str]] = None,
                      top_k_sparse: int = 50,
                      top_k_rerank: int = 10,
-                     use_reranker: bool = True) -> List[Dict[str, Any]]:
+                     filter_urns: Optional[List[str]] = None,
+                     include_content: bool = False,
+                     include_index: bool = False,
+                     use_reranker: bool = True,
+                     fuzzy_distance: int = 0) -> List[Dict[str, Any]]:
         """Search the knowledge base using text query and/or graph expansion.
         
         Args:
             query: Text query for sparse search and reranking
-            graph_filter_urns: List of starting URNs for graph expansion/filtering
+            graph_seed_urns: List of starting URNs for graph expansion/filtering
             graph_expand_hops: Number of hops to expand graph relationships (default 0)
             relation_predicates: List of predicates to follow for graph expansion
             top_k_sparse: Number of results to return from initial sparse search
             top_k_rerank: Number of results to return after reranking
+            filter_urns: List of urns to filter out of the results
+            include_content: Whether to include content in the results
+            include_index: Whether to include index in the results
             use_reranker: Whether to use semantic reranking
+            fuzzy_distance: Threshold for fuzzy matching (0 = exact, 1-2 recommended)
             
         Returns:
             List of document results with scores and content
@@ -916,18 +1101,23 @@ class KnowledgeBaseManager:
         if not self.search_enabled:
             raise RuntimeError("Search is disabled.")
             
-        if not query and not graph_filter_urns:
-            raise ValueError("Search requires either a query or graph_filter_urns.")
+        if not query and not filter_urns:
+            raise ValueError("Search requires either a query or filter_urns.")
             
         # Use configured predicates if not specified
         if relation_predicates is None:
             relation_predicates = self.search_relation_predicates
             
-        self.logger.debug(f"Search request: query='{query}', graph_filter_urns={graph_filter_urns}, graph_expand_hops={graph_expand_hops}")
+        # Disable reranking if content is not included - can't rerank without content
+        if not include_content and use_reranker:
+            self.logger.warning("Disabling reranking because include_content=False. Reranking requires content.")
+            use_reranker = False
+            
+        self.logger.debug(f"Search request: query='{query}', graph_seed_urns={graph_seed_urns}, graph_expand_hops={graph_expand_hops}")
 
         # 1. First, get candidate URNs from sparse search and/or graph expansion
         candidate_urns, sparse_scores = await self._get_candidate_urns(
-            query, graph_filter_urns, graph_expand_hops, relation_predicates, top_k_sparse
+            query, graph_seed_urns, graph_expand_hops, relation_predicates, top_k_sparse, filter_urns, fuzzy_distance
         )
         
         if not candidate_urns:
@@ -935,13 +1125,13 @@ class KnowledgeBaseManager:
             return []
             
         # 2. Fetch content for candidates
-        documents_with_content, error_documents = await self._fetch_content_for_candidates(
-            candidate_urns, sparse_scores
+        documents_with_data, error_documents = await self._fetch_content_for_candidates(
+            candidate_urns, sparse_scores, include_content, include_index, use_reranker, query
         )
         
         # 3. Rerank or sort results
         final_results = await self._prepare_final_results(
-            query, documents_with_content, error_documents, 
+            query, documents_with_data, error_documents, 
             sparse_scores, use_reranker, top_k_sparse, top_k_rerank
         )
         
@@ -1097,23 +1287,27 @@ class KnowledgeBaseManager:
 
     async def _get_candidate_urns(self, 
                                 query: Optional[str], 
-                                graph_filter_urns: Optional[List[str]], 
+                                graph_seed_urns: Optional[List[str]], 
                                 graph_expand_hops: int,
                                 relation_predicates: List[str],
-                                top_k_sparse: int) -> Tuple[Set[str], Dict[str, float]]:
+                                top_k_sparse: int,
+                                filter_urns: Optional[List[str]],
+                                fuzzy_distance: int = 0) -> Tuple[Set[str], Dict[str, float]]:
         """Get candidate URNs from sparse search and graph expansion.
         
         Args:
             query: Search query
-            graph_filter_urns: Initial URNs to start with
+            graph_seed_urns: Initial URNs to start with
             graph_expand_hops: Number of hops to expand graph
             relation_predicates: Relations to follow during expansion
             top_k_sparse: Number of sparse search results to include
+            filter_urns: URNs to filter out of the results
+            fuzzy_distance: Maximum edit distance for fuzzy matching
             
         Returns:
             Tuple of (candidate URNs set, sparse scores dictionary)
         """
-        candidate_urns = set(graph_filter_urns or [])
+        candidate_urns = set(graph_seed_urns or [])
         sparse_scores = {}  # urn -> score
         
         # 1. Sparse search if query provided
@@ -1125,13 +1319,15 @@ class KnowledgeBaseManager:
                 sparse_results = await asyncio.to_thread(
                     self._search_sparse_sync,
                     query,
-                    top_k_sparse
+                    top_k_sparse,
+                    fuzzy_distance,
+                    filter_urns
                 )
                 
                 for urn, score in sparse_results:
                     sparse_scores[urn] = score
                     # If filtering by initial URNs, only add if it matches
-                    if graph_filter_urns is None or urn in graph_filter_urns:
+                    if graph_seed_urns is None or urn in graph_seed_urns:
                         candidate_urns.add(urn)
                 
                 self.logger.debug(f"Sparse search found {len(sparse_results)} results")
@@ -1158,7 +1354,8 @@ class KnowledgeBaseManager:
                         self._find_neighbors_sync,
                         list(current_urns),
                         relation_predicates,
-                        self.search_graph_neighbor_limit
+                        self.search_graph_neighbor_limit,
+                        filter_urns
                     )
                     
                     # Find genuinely new URNs
@@ -1178,19 +1375,31 @@ class KnowledgeBaseManager:
     
     async def _fetch_content_for_candidates(self, 
                                           candidate_urns: Set[str], 
-                                          sparse_scores: Dict[str, float]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """Fetch content for candidate URNs.
+                                          sparse_scores: Dict[str, float],
+                                          include_content: bool,
+                                          include_index: bool,
+                                          use_reranker: bool,
+                                          query: Optional[str] = None) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """Fetch content and/or index for candidate URNs.
         
         Args:
             candidate_urns: Set of candidate URNs
             sparse_scores: Dictionary of URN -> sparse score
+            include_content: Whether to include content in results
+            include_index: Whether to include index in results
+            use_reranker: Whether reranking will be used (forces content fetching)
+            query: Search query (used to determine if reranking is possible)
             
         Returns:
-            Tuple of (documents with content, error documents)
+            Tuple of (documents with requested data, error documents)
         """
-        self.logger.debug(f"Fetching content for {len(candidate_urns)} candidate URNs")
+        self.logger.debug(f"Fetching data for {len(candidate_urns)} candidate URNs (content: {include_content}, index: {include_index})")
         
-        documents_with_content = []
+        # Determine if we need to fetch content (either requested or needed for reranking)
+        need_content_for_reranking = use_reranker and query and self.reranker
+        fetch_content = include_content or need_content_for_reranking
+        
+        documents_with_data = []
         error_documents = []
         
         # NOTE: This assumes URNs directly map to PathComponents.
@@ -1198,37 +1407,71 @@ class KnowledgeBaseManager:
         for urn in candidate_urns:
             try:
                 components = PathComponents.parse_path(urn)
-                content = await self.read_content(components)
+                doc_data = {
+                    'urn': urn,
+                    'sparse_score': sparse_scores.get(urn)
+                }
                 
-                if content:  # Only include docs with content for reranking
-                    documents_with_content.append({
-                        'urn': urn, 
-                        'content': content, 
-                        'sparse_score': sparse_scores.get(urn)
-                    })
-                else:  # Include in error documents without content
-                    error_documents.append({
-                        'urn': urn, 
-                        'sparse_score': sparse_scores.get(urn), 
-                        'rerank_score': None, 
-                        'error': 'No content found'
-                    })
+                content_fetched = False
+                if fetch_content:
+                    try:
+                        content = await self.read_content(components)
+                        if content:
+                            doc_data['content'] = content
+                            content_fetched = True
+                    except Exception as e:
+                        self.logger.warning(f"Failed to fetch content for {urn}: {e}")
+                        if need_content_for_reranking:
+                            # If content is needed for reranking but failed, treat as error
+                            error_documents.append({
+                                'urn': urn,
+                                'sparse_score': sparse_scores.get(urn),
+                                'rerank_score': None,
+                                'error': f'Failed to fetch content for reranking: {str(e)}'
+                            })
+                            continue
+                
+                # Fetch index information if requested
+                if include_index:
+                    try:
+                        index = await self.read_index(components)
+                        doc_data['index'] = index.model_dump()
+                    except Exception as e:
+                        self.logger.warning(f"Failed to fetch index for {urn}: {e}")
+                        doc_data['index_error'] = str(e)
+                
+                # For reranking, we need documents with content
+                if need_content_for_reranking:
+                    if content_fetched:
+                        documents_with_data.append(doc_data)
+                    else:
+                        # No content found, add to error documents
+                        error_documents.append({
+                            'urn': urn,
+                            'sparse_score': sparse_scores.get(urn),
+                            'rerank_score': None,
+                            'error': 'No content found for reranking'
+                        })
+                else:
+                    # Not doing reranking, include all documents regardless of content
+                    documents_with_data.append(doc_data)
+                    
             except Exception as e:
-                self.logger.warning(f"Failed to fetch content for {urn}: {e}")
+                self.logger.warning(f"Failed to process {urn}: {e}")
                 error_documents.append({
-                    'urn': urn, 
-                    'sparse_score': sparse_scores.get(urn), 
-                    'rerank_score': None, 
+                    'urn': urn,
+                    'sparse_score': sparse_scores.get(urn),
+                    'rerank_score': None,
                     'error': str(e)
                 })
                 
-        self.logger.debug(f"Content fetched for {len(documents_with_content)} documents " 
-                         f"({len(error_documents)} errors/empty docs)")
-        return documents_with_content, error_documents
+        self.logger.debug(f"Data fetched for {len(documents_with_data)} documents " 
+                         f"({len(error_documents)} errors/missing content)")
+        return documents_with_data, error_documents
     
     async def _prepare_final_results(self,
                                    query: Optional[str],
-                                   documents_with_content: List[Dict[str, Any]],
+                                   documents_with_data: List[Dict[str, Any]],
                                    error_documents: List[Dict[str, Any]],
                                    sparse_scores: Dict[str, float],
                                    use_reranker: bool,
@@ -1238,7 +1481,7 @@ class KnowledgeBaseManager:
         
         Args:
             query: Search query
-            documents_with_content: Documents with content for reranking
+            documents_with_data: Documents with content for reranking
             error_documents: Documents that had errors or no content
             sparse_scores: Dictionary of URN -> sparse score
             use_reranker: Whether to use reranking
@@ -1251,15 +1494,15 @@ class KnowledgeBaseManager:
         final_results = list(error_documents)  # Start with error documents
         
         # Rerank if requested and possible
-        if use_reranker and query and documents_with_content and self.reranker:
+        if use_reranker and query and documents_with_data and self.reranker:
             try:
-                self.logger.debug(f"Reranking {len(documents_with_content)} documents")
+                self.logger.debug(f"Reranking {len(documents_with_data)} documents")
                 
                 # Run blocking reranker in a separate thread
                 reranked_docs = await asyncio.to_thread(
                     self._rerank_docs_sync,
                     query,
-                    documents_with_content
+                    documents_with_data
                 )
                 
                 # Add reranked docs to final results, potentially overwriting placeholders
@@ -1276,9 +1519,10 @@ class KnowledgeBaseManager:
                         final_results.append(doc)
                 
                 # Sort final list by rerank_score (desc), putting None scores last
-                final_results.sort(key=lambda x: x.get('rerank_score', float('-inf')), reverse=True)
+                final_results.sort(key=lambda x: x.get('rerank_score') if x.get('rerank_score') is not None else float('-inf'), reverse=True)
                 self.logger.debug(f"Reranking complete: returning {min(len(final_results), top_k_rerank)} results")
                 return final_results[:top_k_rerank]
+                
             except Exception as e:
                 self.logger.error(f"Reranking failed: {e}", exc_info=True)
                 # Fall back to sparse results
@@ -1287,27 +1531,28 @@ class KnowledgeBaseManager:
         if sparse_scores:
             # Combine docs_with_content (which have sparse scores) with error_documents
             self.logger.debug("Using sparse scores for ranking")
-            scored_urns = {doc['urn'] for doc in documents_with_content}
-            combined = documents_with_content + [res for res in error_documents if res['urn'] not in scored_urns]
-            combined.sort(key=lambda x: x.get('sparse_score', float('-inf')), reverse=True)
+            scored_urns = {doc['urn'] for doc in documents_with_data}
+            combined = documents_with_data + [res for res in error_documents if res['urn'] not in scored_urns]
+            combined.sort(key=lambda x: x.get('sparse_score') if x.get('sparse_score') is not None else float('-inf'), reverse=True)
             self.logger.debug(f"Returning {min(len(combined), top_k_sparse)} results based on sparse scores")
             return combined[:top_k_sparse]
-        elif documents_with_content:
+            
+        elif documents_with_data:
             # If we have documents but no sparse scores (graph expansion case)
             self.logger.debug("No sparse scores but have documents with content - returning all documents")
             # Add default score of 1.0 to all documents that don't have a score
-            for doc in documents_with_content:
+            for doc in documents_with_data:
                 if 'sparse_score' not in doc:
                     doc['sparse_score'] = 1.0
             # Sort alphabetically by URN for reproducibility
-            documents_with_content.sort(key=lambda x: x['urn'])
-            return documents_with_content
+            documents_with_data.sort(key=lambda x: x['urn'])
+            return documents_with_data
         
         # If no scores at all and no documents with content, just return documents in alphabetical order by URN
         self.logger.debug("No scores or documents with content available, sorting by URN")
         final_results.sort(key=lambda x: x['urn'])
         return final_results[:top_k_rerank]
-
+    
     # Synchronous helper methods for Tantivy operations
     # These are intended to be run in a separate thread via asyncio.to_thread
 
@@ -1485,12 +1730,14 @@ class KnowledgeBaseManager:
                 except Exception as e_commit:
                     self.logger.error(f"Failed to commit writer after exception: {e_commit}")
 
-    def _search_sparse_sync(self, query: str, top_k: int) -> List[Tuple[str, float]]:
+    def _search_sparse_sync(self, query: str, top_k: int, fuzzy_distance: int = 0, filter_urns: Optional[List[str]] = None) -> List[Tuple[str, float]]:
         """Synchronous method for sparse search.
         
         Args:
             query: Search query
             top_k: Maximum number of results to return
+            fuzzy_distance: Maximum edit distance for fuzzy matching (0 = exact, 1-2 recommended)
+            filter_urns: List of URNs to exclude from results
             
         Returns:
             List of (urn, score) tuples
@@ -1498,15 +1745,16 @@ class KnowledgeBaseManager:
         Raises:
             Exception: If search fails
         """
-        return self.sparse_search_index.search(query, top_k)
+        return self.sparse_search_index.search(query, top_k, fuzzy_distance, filter_urns)
         
-    def _find_neighbors_sync(self, urns: List[str], relation_predicates: List[str], limit: int) -> Set[str]:
+    def _find_neighbors_sync(self, urns: List[str], relation_predicates: List[str], limit: int, filter_urns: Optional[List[str]] = None) -> Set[str]:
         """Synchronous method for graph expansion.
         
         Args:
             urns: List of URNs to expand
             relation_predicates: List of predicates to follow
             limit: Maximum number of neighbors to return
+            filter_urns: List of URNs to exclude from neighbor results
             
         Returns:
             Set of neighbor URNs
@@ -1514,7 +1762,7 @@ class KnowledgeBaseManager:
         Raises:
             Exception: If neighbor search fails
         """
-        return self.graph_search_index.find_neighbors(urns, relation_predicates, limit)
+        return self.graph_search_index.find_neighbors(urns, relation_predicates, limit, filter_urns)
     
     def _rerank_docs_sync(self, query: str, documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Synchronous method for reranking.
@@ -1530,3 +1778,115 @@ class KnowledgeBaseManager:
             Exception: If reranking fails
         """
         return self.reranker.rerank(query, documents)
+    
+    def _update_moved_document_sparse_sync(self, old_urn: str, new_urn: str, content: str) -> None:
+        """Synchronous method to update sparse index when document is moved.
+        
+        Args:
+            old_urn: Old document URN
+            new_urn: New document URN  
+            content: Document content
+            
+        Raises:
+            Exception: If index update fails
+        """
+        writer = None
+        try:
+            writer = self.sparse_search_index.get_writer()
+            
+            # Remove old URN entry
+            self.sparse_search_index.delete_document(writer, old_urn)
+            
+            # Add new URN entry with same content
+            self.sparse_search_index.add_document(writer, new_urn, content)
+            
+            # Commit changes
+            writer.commit()
+            writer = None  # Prevent double-commit in finally block
+        except Exception as e:
+            self.logger.error(f"Tantivy sparse index move update failed: {old_urn} -> {new_urn}: {e}")
+            raise
+        finally:
+            if writer:
+                try:
+                    writer.commit()
+                    self.logger.warning(f"Committed writer after exception for move {old_urn} -> {new_urn}")
+                except Exception as e_commit:
+                    self.logger.error(f"Failed to commit writer after exception: {e_commit}")
+    
+    def _update_moved_document_graph_sync(self, old_urn: str, new_urn: str) -> None:
+        """Synchronous method to update graph index when document is moved.
+        
+        Updates all triples where the document appears as subject or object.
+        
+        Args:
+            old_urn: Old document URN
+            new_urn: New document URN
+            
+        Raises:
+            Exception: If index update fails
+        """
+        import tantivy
+        writer = None
+        try:
+            writer = self.graph_search_index.get_writer()
+            
+            # Search for all triples containing the old URN
+            searcher = self.graph_search_index.index.searcher()
+            
+            # Import Occur enum for boolean operations
+            try:
+                from tantivy import Occur
+            except ImportError:
+                Occur = self.graph_search_index.tantivy.Occur
+            
+            # Find triples where old URN is subject
+            subject_query = tantivy.Query.term_query(self.graph_search_index.schema, "subject", old_urn)
+            subject_results = searcher.search(subject_query, limit=10000)
+            
+            # Find triples where old URN is object  
+            object_query = tantivy.Query.term_query(self.graph_search_index.schema, "object", old_urn)
+            object_results = searcher.search(object_query, limit=10000)
+            
+            # Process subject matches (old URN is subject)
+            for score, doc_address in subject_results.hits:
+                doc = searcher.doc(doc_address)
+                predicate = doc.get_first("predicate")
+                object_val = doc.get_first("object")
+                triple_type = doc.get_first("triple_type")
+                
+                if predicate and object_val and triple_type:
+                    # Delete old triple
+                    self.graph_search_index.delete_triple(writer, old_urn, predicate, object_val, triple_type)
+                    # Add new triple with updated subject
+                    self.graph_search_index.add_triple(writer, new_urn, predicate, object_val, triple_type)
+            
+            # Process object matches (old URN is object)
+            for score, doc_address in object_results.hits:
+                doc = searcher.doc(doc_address)
+                subject = doc.get_first("subject")
+                predicate = doc.get_first("predicate")
+                triple_type = doc.get_first("triple_type")
+                
+                if subject and predicate and triple_type:
+                    # Skip if this was already processed in subject matches
+                    if subject != old_urn:
+                        # Delete old triple
+                        self.graph_search_index.delete_triple(writer, subject, predicate, old_urn, triple_type)
+                        # Add new triple with updated object
+                        self.graph_search_index.add_triple(writer, subject, predicate, new_urn, triple_type)
+            
+            # Commit changes
+            writer.commit()
+            writer = None  # Prevent double-commit in finally block
+            
+        except Exception as e:
+            self.logger.error(f"Tantivy graph index move update failed: {old_urn} -> {new_urn}: {e}")
+            raise
+        finally:
+            if writer:
+                try:
+                    writer.commit()
+                    self.logger.warning(f"Committed writer after exception for graph move {old_urn} -> {new_urn}")
+                except Exception as e_commit:
+                    self.logger.error(f"Failed to commit writer after exception: {e_commit}")

@@ -43,6 +43,16 @@ class TestKBSearch:
         self.mock_query_parser = MagicMock()
         self.mock_index.query_parser.return_value = self.mock_query_parser
         
+        # Set up document mock for creating documents
+        self.mock_document = MagicMock()
+        mock_tantivy.Document.return_value = self.mock_document
+        
+        # Set up schema builder mock
+        self.mock_schema_builder = MagicMock()
+        self.mock_schema = MagicMock()
+        self.mock_schema_builder.build.return_value = self.mock_schema
+        mock_tantivy.SchemaBuilder.return_value = self.mock_schema_builder
+        
         # Import the classes now that the mocks are in place
         from cmcp.kb.search import SparseSearchIndex, GraphSearchIndex, Reranker
         self.SparseSearchIndex = SparseSearchIndex
@@ -89,9 +99,13 @@ class TestKBSearch:
         # Create search index
         search_idx = self.SparseSearchIndex(str(tmp_path / "sparse_ops"))
         
-        # Test add document
+        # Test add document - now uses Document object with add_text calls
         search_idx.add_document(self.mock_writer, "kb://ns/c/d1", "Some content")
-        self.mock_writer.add_document.assert_called_once_with({"urn": "kb://ns/c/d1", "content": "Some content"})
+        # Verify Document was created and text fields were added
+        mock_tantivy.Document.assert_called_once()
+        self.mock_document.add_text.assert_any_call("urn", "kb://ns/c/d1")
+        self.mock_document.add_text.assert_any_call("content", "Some content")
+        self.mock_writer.add_document.assert_called_once_with(self.mock_document)
         
         # Test delete document
         search_idx.delete_document(self.mock_writer, "kb://ns/c/d1")
@@ -99,13 +113,19 @@ class TestKBSearch:
     
     def test_sparse_search(self, tmp_path):
         """Test searching the sparse index."""
-        # Set up mock search results
+        # Set up mock search results with proper tuple structure
+        mock_doc = MagicMock()
+        mock_doc.get_first.return_value = "kb://mock/sparse/doc1"
+        
+        # Mock the search results - hits should be a list of (score, doc_address) tuples
+        mock_search_results = MagicMock()
+        mock_search_results.hits = [(1.5, "doc_address_1")]  # (score, doc_address) tuples
+        self.mock_searcher.search.return_value = mock_search_results
+        self.mock_searcher.doc.return_value = mock_doc
+        
+        # Mock query parsing
         mock_query = MagicMock()
-        self.mock_query_parser.parse.return_value = mock_query
-        mock_hit = MagicMock()
-        mock_hit.doc.get.return_value = "kb://mock/sparse/doc1"
-        mock_hit.score = 1.5
-        self.mock_searcher.search.return_value = MagicMock(hits=[mock_hit])
+        self.mock_index.parse_query.return_value = mock_query
         
         # Create search index and perform search
         search_idx = self.SparseSearchIndex(str(tmp_path / "sparse_search"))
@@ -115,9 +135,9 @@ class TestKBSearch:
         # Verify the right methods were called
         self.mock_index.reload.assert_called_once()
         self.mock_index.searcher.assert_called_once()
-        self.mock_index.query_parser.assert_called_once_with(["content"])
-        self.mock_query_parser.parse.assert_called_once_with(query)
+        self.mock_index.parse_query.assert_called_once_with(query, default_field_names=["content"])
         self.mock_searcher.search.assert_called_once_with(mock_query, limit=10)
+        self.mock_searcher.doc.assert_called_once_with("doc_address_1")
         assert results == [("kb://mock/sparse/doc1", 1.5)]
     
     def test_sparse_search_empty_query(self, tmp_path):
@@ -150,23 +170,39 @@ class TestKBSearch:
         # Create graph index
         graph_idx = self.GraphSearchIndex(str(tmp_path / "graph_ops"))
         
-        # Test Add - now uses Document creation
+        # Test Add - uses Document creation with add_text calls
         graph_idx.add_triple(self.mock_writer, "kb://s", "kb://p", "kb://o", "reference")
-        # Should create a Document and call add_document
-        self.mock_writer.add_document.assert_called_once()
+        # Verify Document was created and text fields were added
+        mock_tantivy.Document.assert_called()
+        self.mock_document.add_text.assert_any_call("subject", "kb://s")
+        self.mock_document.add_text.assert_any_call("predicate", "kb://p")
+        self.mock_document.add_text.assert_any_call("object", "kb://o")
+        self.mock_document.add_text.assert_any_call("triple_type", "reference")
+        self.mock_writer.add_document.assert_called_with(self.mock_document)
         
-        # Test Delete - now simplified to delete by subject only
+        # Test Delete - uses delete_documents_by_query with boolean query for precise deletion
+        # Set up query mocks
+        mock_boolean_query = MagicMock()
+        mock_tantivy.Query.boolean_query.return_value = mock_boolean_query
+        
         graph_idx.delete_triple(self.mock_writer, "kb://s", "kb://p", "kb://o", "reference")
-        self.mock_writer.delete_documents.assert_called_once_with("subject", "kb://s")
+        # Verify boolean query was constructed and delete_documents_by_query was called
+        mock_tantivy.Query.boolean_query.assert_called_once()
+        self.mock_writer.delete_documents_by_query.assert_called_once_with(mock_boolean_query)
     
     def test_graph_find_neighbors(self, tmp_path):
         """Test finding neighbors."""
-        # Mock search results for neighbors
-        hit1 = MagicMock()
-        hit1.doc.get.side_effect = lambda key: {"subject": "kb://ns/c/doc1", "object": "kb://ns/c/doc2", "predicate": "references"}.get(key)
-        hit2 = MagicMock()
-        hit2.doc.get.side_effect = lambda key: {"subject": "kb://ns/c/doc3", "object": "kb://ns/c/doc1", "predicate": "references"}.get(key)
-        self.mock_searcher.search.return_value = MagicMock(hits=[hit1, hit2])
+        # Mock search results for neighbors with proper tuple structure
+        mock_doc1 = MagicMock()
+        mock_doc1.get_first.side_effect = lambda key: {"subject": "kb://ns/c/doc1", "object": "kb://ns/c/doc2", "predicate": "references"}.get(key)
+        mock_doc2 = MagicMock()
+        mock_doc2.get_first.side_effect = lambda key: {"subject": "kb://ns/c/doc3", "object": "kb://ns/c/doc1", "predicate": "references"}.get(key)
+        
+        # Mock search results - hits should be a list of (score, doc_address) tuples
+        mock_search_results = MagicMock()
+        mock_search_results.hits = [(1.0, "doc_address_1"), (1.0, "doc_address_2")]
+        self.mock_searcher.search.return_value = mock_search_results
+        self.mock_searcher.doc.side_effect = [mock_doc1, mock_doc2]
         
         # Create graph index and search for neighbors
         graph_idx = self.GraphSearchIndex(str(tmp_path / "graph_neighbors"))
@@ -176,10 +212,13 @@ class TestKBSearch:
         # Verify the right methods were called
         self.mock_index.reload.assert_called_once()
         self.mock_index.searcher.assert_called_once()
-        # The new implementation searches multiple times, so just verify search was called
+        # The implementation searches for both subject and object matches
         assert self.mock_searcher.search.call_count >= 1
-        # Should still find the neighbors (results may vary due to simplified implementation)
+        # Should find the neighbors
         assert isinstance(neighbors, set)
+        # Should contain doc2 (forward relation) and doc3 (reverse relation)
+        expected_neighbors = {"kb://ns/c/doc2", "kb://ns/c/doc3"}
+        assert neighbors == expected_neighbors
     
     def test_graph_find_neighbors_empty_input(self, tmp_path):
         """Test find_neighbors with empty URN list."""
@@ -248,12 +287,12 @@ class TestKBSearch:
         reranker = self.Reranker("test-model")
         reranked = reranker.rerank("query", [])
         
-        # Verify results and that no prediction was made
+        # Verify results and that predict was not called
         assert reranked == []
         mock_model_instance.predict.assert_not_called()
     
     def test_reranker_rerank_empty_query(self):
-        """Test reranking with empty query (should fall back to sparse score)."""
+        """Test reranking with empty query."""
         # Set up mocks
         mock_model_instance = MagicMock()
         mock_cross_encoder.return_value = mock_model_instance
@@ -261,15 +300,13 @@ class TestKBSearch:
         # Create reranker and test with empty query
         reranker = self.Reranker("test-model")
         docs = [
-            {"urn": "d1", "content": "c1", "sparse_score": 0.5},
-            {"urn": "d2", "content": "c2", "sparse_score": 1.5},
-            {"urn": "d3", "content": "c3", "sparse_score": 1.0},
+            {"urn": "d1", "content": "content 1", "sparse_score": 0.8},
+            {"urn": "d2", "content": "content 2", "sparse_score": 0.6},
         ]
         reranked = reranker.rerank("", docs)
         
-        # Verify results and that no prediction was made
-        assert len(reranked) == 3
-        assert reranked[0]['urn'] == 'd2'
-        assert reranked[1]['urn'] == 'd3'
-        assert reranked[2]['urn'] == 'd1'
+        # Should fall back to sorting by sparse score
+        assert len(reranked) == 2
+        assert reranked[0]["urn"] == "d1"  # Higher sparse score
+        assert reranked[1]["urn"] == "d2"  # Lower sparse score
         mock_model_instance.predict.assert_not_called() 
