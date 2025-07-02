@@ -128,4 +128,5 @@ fi
 
 echo "=== Container Run Complete ==="
 echo "To check the container status, run: bin/05-check-container.sh" 
-echo "To run tests against the container, execute: bin/06-run-tests.sh" 
+echo "To run tests against the container, execute: bin/06-run-tests.sh"
+echo "To view container logs, execute: bin/09-view-logs.sh" 

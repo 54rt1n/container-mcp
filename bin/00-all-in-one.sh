@@ -35,7 +35,7 @@ bin/04-run-container.sh
 echo ""
 
 echo "=== Step 5: Run Tests ==="
-bin/05-run-tests.sh
+bin/06-run-tests.sh
 echo ""
 
 echo "=== All-in-One Setup Complete ==="

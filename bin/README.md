@@ -65,13 +65,65 @@ Usage:
 bin/04-run-container.sh
 ```
 
-### 05-run-tests.sh
+### 05-check-container.sh
+
+Checks the status of the Container-MCP container and displays detailed information including logs if the container is not running properly.
+
+Usage:
+```bash
+bin/05-check-container.sh
+```
+
+### 06-run-tests.sh
 
 Runs tests for the Container-MCP project, with options for running unit tests, integration tests, or all tests, and optionally generating coverage reports.
 
 Usage:
 ```bash
-bin/05-run-tests.sh [unit|integration|all]
+bin/06-run-tests.sh [unit|integration|all]
+```
+
+### 07-attach-container.sh
+
+Attaches a shell to the running Container-MCP container for debugging and inspection.
+
+Usage:
+```bash
+bin/07-attach-container.sh [shell]
+```
+
+### 08-testnetwork.sh
+
+Tests network connectivity to the Container-MCP service endpoints to verify proper operation.
+
+Usage:
+```bash
+bin/08-testnetwork.sh
+```
+
+### 09-view-logs.sh
+
+Provides various options for viewing Container-MCP logs with filtering and live tail capabilities.
+
+Usage:
+```bash
+bin/09-view-logs.sh [options]
+```
+
+Options:
+- `-f, --follow`: Follow log output (live tail)
+- `-n, --lines NUM`: Show last NUM lines
+- `-s, --since TIME`: Show logs since timestamp
+- `-t, --timestamps`: Show timestamps
+- `-h, --help`: Show help message
+
+Examples:
+```bash
+bin/09-view-logs.sh           # Show all logs
+bin/09-view-logs.sh -f        # Follow logs in real-time
+bin/09-view-logs.sh -n 50     # Show last 50 lines
+bin/09-view-logs.sh -f -t     # Follow logs with timestamps
+bin/09-view-logs.sh -s 1h     # Show logs from last hour
 ```
 
 ## General Usage
@@ -89,7 +141,11 @@ bin/01-init.sh
 bin/02-build-container.sh
 bin/03-setup-environment.sh
 bin/04-run-container.sh
-bin/05-run-tests.sh
+bin/05-check-container.sh     # Check container status
+bin/06-run-tests.sh           # Run tests
+bin/07-attach-container.sh    # Attach to container (optional)
+bin/08-testnetwork.sh         # Test network connectivity (optional)
+bin/09-view-logs.sh           # View container logs (optional)
 ```
 
 ## Requirements
