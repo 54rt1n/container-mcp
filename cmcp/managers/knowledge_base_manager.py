@@ -440,6 +440,18 @@ class KnowledgeBaseManager:
             # Update document index
             self.document_store.update_index(components, {"references": existing_references})
             
+            # Add reverse reference to the target document's referenced_by field
+            reverse_triple = ImplicitRDFTriple(
+                predicate=relation,
+                object=components.urn
+            )
+            
+            existing_referenced_by = list(ref_index.referenced_by)
+            if reverse_triple not in existing_referenced_by:
+                existing_referenced_by.append(reverse_triple)
+                self.document_store.update_index(ref_components, {"referenced_by": existing_referenced_by})
+                self.logger.debug(f"Added reverse reference: {ref_components.urn} referenced_by {components.urn}")
+            
             # Update graph search index
             if self.search_enabled and self.graph_search_index:
                 try:
@@ -509,6 +521,27 @@ class KnowledgeBaseManager:
             updated_index = self.document_store.update_index(
                 components, update_data
             )
+            
+            # Remove reverse reference from the target document's referenced_by field
+            try:
+                ref_index = self.document_store.read_index(ref_components)
+                reverse_triple = ImplicitRDFTriple(
+                    predicate=relation,
+                    object=components.urn
+                )
+                
+                existing_referenced_by = ref_index.referenced_by
+                updated_referenced_by = [ref for ref in existing_referenced_by if ref != reverse_triple]
+                
+                if len(updated_referenced_by) != len(existing_referenced_by):
+                    self.document_store.update_index(ref_components, {"referenced_by": updated_referenced_by})
+                    self.logger.debug(f"Removed reverse reference: {ref_components.urn} no longer referenced_by {components.urn}")
+                    
+            except FileNotFoundError:
+                # Target document no longer exists, which is fine - the reverse reference is already gone
+                self.logger.debug(f"Target document {ref_components.urn} not found when removing reverse reference")
+            except Exception as e:
+                self.logger.warning(f"Failed to remove reverse reference from {ref_components.urn}: {e}")
             
             # Update graph search index
             if self.search_enabled and self.graph_search_index:
@@ -595,6 +628,60 @@ class KnowledgeBaseManager:
         # We need to move the folder from the old path to the new path, and then rewrite the index
         self.document_store.move_document(components, new_components)
         
+        # Update all references that point to the old document location
+        old_urn = components.urn
+        new_urn = new_components.urn
+        
+        # Find all documents that reference the moved document and update their references
+        if index.referenced_by:
+            self.logger.info(f"Updating {len(index.referenced_by)} reverse references for moved document")
+            
+            for reverse_ref in index.referenced_by:
+                try:
+                    # Parse the URN of the referencing document
+                    referencing_components = PathComponents.parse_path(reverse_ref.object)
+                    referencing_index = self.document_store.read_index(referencing_components)
+                    
+                    # Update references in the referencing document
+                    updated_references = []
+                    references_updated = False
+                    
+                    for ref in referencing_index.references:
+                        if ref.object == old_urn and ref.predicate == reverse_ref.predicate:
+                            # Update this reference to point to the new URN
+                            updated_ref = ImplicitRDFTriple(predicate=ref.predicate, object=new_urn)
+                            updated_references.append(updated_ref)
+                            references_updated = True
+                            self.logger.debug(f"Updated reference in {referencing_components.urn}: {old_urn} -> {new_urn}")
+                        else:
+                            updated_references.append(ref)
+                    
+                    if references_updated:
+                        self.document_store.update_index(referencing_components, {"references": updated_references})
+                        
+                except Exception as e:
+                    self.logger.error(f"Failed to update reference in {reverse_ref.object}: {e}")
+        
+        # Update the moved document's referenced_by to reflect the new URN in reverse references
+        try:
+            moved_index = self.document_store.read_index(new_components)
+            updated_referenced_by = []
+            
+            for ref_by in moved_index.referenced_by:
+                # The referenced_by entries should point to the new URN as the object
+                # But we need to update any that still point to the old URN
+                if ref_by.object == old_urn:
+                    updated_ref_by = ImplicitRDFTriple(predicate=ref_by.predicate, object=new_urn)
+                    updated_referenced_by.append(updated_ref_by)
+                else:
+                    updated_referenced_by.append(ref_by)
+            
+            if updated_referenced_by != moved_index.referenced_by:
+                self.document_store.update_index(new_components, {"referenced_by": updated_referenced_by})
+                
+        except Exception as e:
+            self.logger.error(f"Failed to update referenced_by for moved document: {e}")
+        
         self.logger.info(f"Moved document: {components.path} → {new_components.path}")
         
         return index
@@ -627,6 +714,48 @@ class KnowledgeBaseManager:
                 "status": "error",
                 "message": f"Error checking document: {str(e)}"
             }
+        
+        # Clean up bidirectional references before deleting the document
+        try:
+            index = self.document_store.read_index(components)
+            
+            # Remove all references from this document to other documents (and their reverse references)
+            for ref in index.references:
+                try:
+                    ref_components = PathComponents.parse_path(ref.object)
+                    ref_index = self.document_store.read_index(ref_components)
+                    
+                    # Remove the reverse reference from the target document
+                    reverse_triple = ImplicitRDFTriple(predicate=ref.predicate, object=components.urn)
+                    updated_referenced_by = [r for r in ref_index.referenced_by if r != reverse_triple]
+                    
+                    if len(updated_referenced_by) != len(ref_index.referenced_by):
+                        self.document_store.update_index(ref_components, {"referenced_by": updated_referenced_by})
+                        self.logger.debug(f"Removed reverse reference from {ref_components.urn}")
+                        
+                except Exception as e:
+                    self.logger.warning(f"Failed to clean up reverse reference for {ref.object}: {e}")
+            
+            # Remove references from other documents that point to this document
+            for reverse_ref in index.referenced_by:
+                try:
+                    referencing_components = PathComponents.parse_path(reverse_ref.object)
+                    referencing_index = self.document_store.read_index(referencing_components)
+                    
+                    # Remove the reference from the referencing document
+                    reference_to_remove = ImplicitRDFTriple(predicate=reverse_ref.predicate, object=components.urn)
+                    updated_references = [r for r in referencing_index.references if r != reference_to_remove]
+                    
+                    if len(updated_references) != len(referencing_index.references):
+                        self.document_store.update_index(referencing_components, {"references": updated_references})
+                        self.logger.debug(f"Removed reference from {referencing_components.urn}")
+                        
+                except Exception as e:
+                    self.logger.warning(f"Failed to clean up reference from {reverse_ref.object}: {e}")
+                    
+        except Exception as e:
+            self.logger.error(f"Error during reference cleanup: {e}", exc_info=True)
+            # Continue with deletion even if cleanup fails
             
         # Update the search indices if enabled
         if self.search_enabled:
@@ -818,6 +947,154 @@ class KnowledgeBaseManager:
         
         return final_results
     
+    async def recover_search_indices(self, rebuild_all: bool = False) -> Dict[str, Any]:
+        """Recover or rebuild search indices after corruption or deletion.
+        
+        This method will attempt to recover both sparse and graph search indices.
+        If rebuild_all is True, it will also repopulate the indices with all
+        existing documents and their relationships.
+        
+        Args:
+            rebuild_all: If True, rebuild indices from scratch and repopulate with all documents
+            
+        Returns:
+            Dictionary with recovery status for each index type
+            
+        Raises:
+            RuntimeError: If search is disabled or knowledge base manager is not initialized
+        """
+        self.check_initialized()
+        
+        if not self.search_enabled:
+            raise RuntimeError("Search is disabled.")
+        
+        recovery_status = {
+            "sparse_index": {"status": "skipped", "error": None},
+            "graph_index": {"status": "skipped", "error": None},
+            "documents_processed": 0,
+            "triples_processed": 0
+        }
+        
+        self.logger.info("Starting search index recovery...")
+        
+        # Recover sparse search index
+        if self.sparse_search_index:
+            try:
+                self.logger.info("Recovering sparse search index...")
+                async with self.sparse_index_lock:
+                    await asyncio.to_thread(self.sparse_search_index._recover_index)
+                recovery_status["sparse_index"]["status"] = "recovered"
+                self.logger.info("Sparse search index recovered successfully")
+            except Exception as e:
+                self.logger.error(f"Failed to recover sparse search index: {e}", exc_info=True)
+                recovery_status["sparse_index"]["status"] = "error"
+                recovery_status["sparse_index"]["error"] = str(e)
+        
+        # Recover graph search index
+        if self.graph_search_index:
+            try:
+                self.logger.info("Recovering graph search index...")
+                async with self.graph_index_lock:
+                    await asyncio.to_thread(self.graph_search_index._recover_index)
+                recovery_status["graph_index"]["status"] = "recovered"
+                self.logger.info("Graph search index recovered successfully")
+            except Exception as e:
+                self.logger.error(f"Failed to recover graph search index: {e}", exc_info=True)
+                recovery_status["graph_index"]["status"] = "error"
+                recovery_status["graph_index"]["error"] = str(e)
+        
+        # If rebuild_all is requested, repopulate indices with existing documents
+        if rebuild_all:
+            try:
+                self.logger.info("Rebuilding indices from existing documents...")
+                await self._rebuild_indices_from_documents(recovery_status)
+                self.logger.info("Index rebuild completed")
+            except Exception as e:
+                self.logger.error(f"Failed to rebuild indices from documents: {e}", exc_info=True)
+                recovery_status["rebuild_error"] = str(e)
+        
+        self.logger.info(f"Search index recovery completed: {recovery_status}")
+        return recovery_status
+    
+    async def _rebuild_indices_from_documents(self, recovery_status: Dict[str, Any]) -> None:
+        """Rebuild search indices from all existing documents.
+        
+        Args:
+            recovery_status: Status dictionary to update with progress
+        """
+        # Get all documents
+        all_documents = await self.list_documents(recursive=True)
+        recovery_status["total_documents"] = len(all_documents)
+        
+        docs_processed = 0
+        triples_processed = 0
+        
+        for doc_path in all_documents:
+            try:
+                components = PathComponents.parse_path(doc_path)
+                
+                # Read document index and content
+                try:
+                    index = await self.read_index(components)
+                    content = await self.read_content(components)
+                    
+                    # Update sparse index if content exists
+                    if content and self.sparse_search_index:
+                        try:
+                            async with self.sparse_index_lock:
+                                await asyncio.to_thread(
+                                    self._update_sparse_index_sync,
+                                    components.urn,
+                                    content
+                                )
+                        except Exception as e:
+                            self.logger.warning(f"Failed to index content for {components.urn}: {e}")
+                    
+                    # Update graph index with references and preferences
+                    if self.graph_search_index:
+                        try:
+                            async with self.graph_index_lock:
+                                # Add references
+                                for ref in index.references:
+                                    await asyncio.to_thread(
+                                        self._add_triple_sync,
+                                        components.urn,
+                                        ref.predicate,
+                                        ref.object,
+                                        "reference"
+                                    )
+                                    triples_processed += 1
+                                
+                                # Add preferences
+                                for pref in index.preferences:
+                                    await asyncio.to_thread(
+                                        self._add_triple_sync,
+                                        components.urn,
+                                        pref.predicate,
+                                        pref.object,
+                                        "preference"
+                                    )
+                                    triples_processed += 1
+                        except Exception as e:
+                            self.logger.warning(f"Failed to index triples for {components.urn}: {e}")
+                    
+                    docs_processed += 1
+                    
+                    if docs_processed % 100 == 0:
+                        self.logger.info(f"Processed {docs_processed}/{len(all_documents)} documents...")
+                        
+                except FileNotFoundError:
+                    self.logger.warning(f"Document or content not found for {doc_path}, skipping")
+                    continue
+                    
+            except Exception as e:
+                self.logger.error(f"Error processing document {doc_path}: {e}")
+                continue
+        
+        recovery_status["documents_processed"] = docs_processed
+        recovery_status["triples_processed"] = triples_processed
+        self.logger.info(f"Rebuild completed: {docs_processed} documents, {triples_processed} triples processed")
+
     async def _get_candidate_urns(self, 
                                 query: Optional[str], 
                                 graph_filter_urns: Optional[List[str]], 

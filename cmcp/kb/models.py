@@ -47,6 +47,10 @@ class DocumentIndex(BaseModel):
         default_factory=list, 
         description="References to other documents"
     )
+    referenced_by: List[ImplicitRDFTriple] = Field(
+        default_factory=list, 
+        description="Documents that reference this document (bidirectional references)"
+    )
     indices: List[ImplicitRDFTriple] = Field(
         default_factory=list, 
         description="Indexing triples for the document"

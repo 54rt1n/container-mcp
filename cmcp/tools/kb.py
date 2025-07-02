@@ -206,7 +206,7 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
             path: Document path in format "namespace/collection[/subcollection]*/name"
             
         Returns:
-            Document content as string
+            Dictionary with document content and metadata
         """
         try:
             # Parse the path
@@ -215,7 +215,11 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
             # Read the document using components
             content = await kb_manager.read_content(components)
             
-            return content
+            return {
+                "status": "success",
+                "content": content,
+                "path": path
+            }
         except ValueError as e:
             return {
                 "status": "error",

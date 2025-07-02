@@ -28,33 +28,77 @@ class SparseSearchIndex:
             raise ImportError("tantivy not installed. Install with 'pip install tantivy'")
         
         self.index_path = Path(index_path)
+        self.tantivy = tantivy  # Store reference for recovery
+        self._initialize_index()
+    
+    def _initialize_index(self):
+        """Initialize or reinitialize the Tantivy index."""
         os.makedirs(self.index_path, exist_ok=True)
         
         # Define schema for document content using SchemaBuilder
-        schema_builder = tantivy.SchemaBuilder()
+        schema_builder = self.tantivy.SchemaBuilder()
         schema_builder.add_text_field("urn", stored=True, tokenizer_name="raw")  # Store URN for retrieval, no tokenization
         schema_builder.add_text_field("content", stored=False)  # Don't store content to avoid duplication
         self.schema = schema_builder.build()
         
         # Create or open the index
         try:
-            self.index = tantivy.Index(self.schema, str(self.index_path))
-            logger.info(f"Opened existing sparse search index at {index_path}")
+            self.index = self.tantivy.Index(self.schema, str(self.index_path))
+            logger.info(f"Opened existing sparse search index at {self.index_path}")
         except Exception as e:
-            logger.info(f"Creating new sparse search index at {index_path}: {e}")
-            self.index = tantivy.Index(self.schema, str(self.index_path))
+            logger.info(f"Creating new sparse search index at {self.index_path}: {e}")
+            self.index = self.tantivy.Index(self.schema, str(self.index_path))
+    
+    def _is_index_healthy(self) -> bool:
+        """Check if the index is healthy and can create a writer.
+        
+        Returns:
+            True if index is healthy, False otherwise
+        """
+        try:
+            # Try to create and immediately close a writer
+            writer = self.index.writer()
+            writer.commit()
+            return True
+        except Exception as e:
+            logger.warning(f"Index health check failed: {e}")
+            return False
+    
+    def _recover_index(self):
+        """Recover the index by reinitializing it."""
+        logger.info(f"Recovering sparse search index at {self.index_path}")
+        try:
+            self._initialize_index()
+            logger.info(f"Successfully recovered sparse search index")
+        except Exception as e:
+            logger.error(f"Failed to recover sparse search index: {e}")
+            raise
     
     def get_writer(self):
         """Get an index writer.
         
         Returns:
             Tantivy IndexWriter
+            
+        Raises:
+            Exception: If writer cannot be created even after recovery attempt
         """
-        return self.index.writer()
+        try:
+            return self.index.writer()
+        except Exception as e:
+            logger.warning(f"Failed to get writer, attempting index recovery: {e}")
+            # Try to recover the index
+            self._recover_index()
+            # Try again after recovery
+            return self.index.writer()
     
     def reload_index(self):
         """Reload the index to see the latest changes."""
-        self.index.reload()
+        try:
+            self.index.reload()
+        except Exception as e:
+            logger.warning(f"Failed to reload index, attempting recovery: {e}")
+            self._recover_index()
     
     def add_document(self, writer, urn: str, content: str):
         """Add a document to the index.
@@ -64,7 +108,10 @@ class SparseSearchIndex:
             urn: Document URN
             content: Document content
         """
-        doc = {"urn": urn, "content": content}
+        # Create a proper Tantivy document
+        doc = self.tantivy.Document()
+        doc.add_text("urn", urn)
+        doc.add_text("content", content)
         writer.add_document(doc)
     
     def delete_document(self, writer, urn: str):
@@ -98,8 +145,7 @@ class SparseSearchIndex:
         # Get a searcher directly (rather than through a reader which can be redundant)
         searcher = self.index.searcher()
         try:
-            query_parser = self.index.query_parser(["content"])
-            query = query_parser.parse(query_str)
+            query = self.index.parse_query(query_str, default_field_names=["content"])
             
             results = searcher.search(query, limit=top_k)
             
@@ -135,10 +181,15 @@ class GraphSearchIndex:
             raise ImportError("tantivy not installed. Install with 'pip install tantivy'")
         
         self.index_path = Path(index_path)
+        self.tantivy = tantivy  # Store reference for recovery
+        self._initialize_index()
+    
+    def _initialize_index(self):
+        """Initialize or reinitialize the Tantivy index."""
         os.makedirs(self.index_path, exist_ok=True)
         
         # Define schema for RDF triples using SchemaBuilder
-        schema_builder = tantivy.SchemaBuilder()
+        schema_builder = self.tantivy.SchemaBuilder()
         schema_builder.add_text_field("subject", stored=True, tokenizer_name="raw")
         schema_builder.add_text_field("predicate", stored=True, tokenizer_name="raw")
         schema_builder.add_text_field("object", stored=True, tokenizer_name="raw")
@@ -147,23 +198,62 @@ class GraphSearchIndex:
         
         # Create or open the index
         try:
-            self.index = tantivy.Index(self.schema, str(self.index_path))
-            logger.info(f"Opened existing graph search index at {index_path}")
+            self.index = self.tantivy.Index(self.schema, str(self.index_path))
+            logger.info(f"Opened existing graph search index at {self.index_path}")
         except Exception as e:
-            logger.info(f"Creating new graph search index at {index_path}: {e}")
-            self.index = tantivy.Index(self.schema, str(self.index_path))
+            logger.info(f"Creating new graph search index at {self.index_path}: {e}")
+            self.index = self.tantivy.Index(self.schema, str(self.index_path))
+    
+    def _is_index_healthy(self) -> bool:
+        """Check if the index is healthy and can create a writer.
+        
+        Returns:
+            True if index is healthy, False otherwise
+        """
+        try:
+            # Try to create and immediately close a writer
+            writer = self.index.writer()
+            writer.commit()
+            return True
+        except Exception as e:
+            logger.warning(f"Index health check failed: {e}")
+            return False
+    
+    def _recover_index(self):
+        """Recover the index by reinitializing it."""
+        logger.info(f"Recovering graph search index at {self.index_path}")
+        try:
+            self._initialize_index()
+            logger.info(f"Successfully recovered graph search index")
+        except Exception as e:
+            logger.error(f"Failed to recover graph search index: {e}")
+            raise
     
     def get_writer(self):
         """Get an index writer.
         
         Returns:
             Tantivy IndexWriter
+            
+        Raises:
+            Exception: If writer cannot be created even after recovery attempt
         """
-        return self.index.writer()
+        try:
+            return self.index.writer()
+        except Exception as e:
+            logger.warning(f"Failed to get writer, attempting index recovery: {e}")
+            # Try to recover the index
+            self._recover_index()
+            # Try again after recovery
+            return self.index.writer()
     
     def reload_index(self):
         """Reload the index to see the latest changes."""
-        self.index.reload()
+        try:
+            self.index.reload()
+        except Exception as e:
+            logger.warning(f"Failed to reload index, attempting recovery: {e}")
+            self._recover_index()
     
     def add_triple(self, writer, subject: str, predicate: str, object: str, triple_type: str):
         """Add a triple to the index.
@@ -175,10 +265,8 @@ class GraphSearchIndex:
             object: Object URN
             triple_type: Type of triple (e.g., 'preference', 'reference')
         """
-        import tantivy
-        
         # Create a proper Tantivy document
-        doc = tantivy.Document()
+        doc = self.tantivy.Document()
         doc.add_text("subject", subject)
         doc.add_text("predicate", predicate)
         doc.add_text("object", object)
@@ -217,8 +305,6 @@ class GraphSearchIndex:
         Returns:
             Set of neighbor URNs
         """
-        import tantivy
-        
         if not urns:
             logger.debug("No URNs provided for find_neighbors, returning empty set")
             return set()
@@ -239,8 +325,8 @@ class GraphSearchIndex:
                 for predicate in relation_predicates:
                     # Search for URN as subject
                     try:
-                        subject_query = tantivy.Query.term_query(self.schema, "subject", urn)
-                        pred_query = tantivy.Query.term_query(self.schema, "predicate", predicate)
+                        subject_query = self.tantivy.Query.term_query(self.schema, "subject", urn)
+                        pred_query = self.tantivy.Query.term_query(self.schema, "predicate", predicate)
                         # Note: Can't easily combine queries, so search separately
                         subj_results = searcher.search(subject_query, limit=neighbor_limit)
                         for hit in subj_results.hits:
@@ -254,7 +340,7 @@ class GraphSearchIndex:
                     
                     # Search for URN as object
                     try:
-                        object_query = tantivy.Query.term_query(self.schema, "object", urn)
+                        object_query = self.tantivy.Query.term_query(self.schema, "object", urn)
                         obj_results = searcher.search(object_query, limit=neighbor_limit)
                         for hit in obj_results.hits:
                             doc = hit.doc
