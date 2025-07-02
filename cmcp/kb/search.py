@@ -74,6 +74,31 @@ class SparseSearchIndex:
             logger.error(f"Failed to recover sparse search index: {e}")
             raise
     
+    def clear_index(self):
+        """Completely clear the index by removing all data and reinitializing empty.
+        
+        This removes the entire index directory and creates a fresh, empty index.
+        
+        Raises:
+            Exception: If index clearing fails
+        """
+        import shutil
+        
+        logger.info(f"Clearing sparse search index at {self.index_path}")
+        try:
+            # Remove the entire index directory if it exists
+            if self.index_path.exists():
+                shutil.rmtree(self.index_path)
+                logger.debug(f"Removed sparse index directory: {self.index_path}")
+            
+            # Reinitialize with empty index
+            self._initialize_index()
+            logger.info(f"Successfully cleared and reinitialized sparse search index")
+            
+        except Exception as e:
+            logger.error(f"Failed to clear sparse search index: {e}")
+            raise
+    
     def get_writer(self):
         """Get an index writer.
         
@@ -323,6 +348,31 @@ class GraphSearchIndex:
             logger.error(f"Failed to recover graph search index: {e}")
             raise
     
+    def clear_index(self):
+        """Completely clear the index by removing all data and reinitializing empty.
+        
+        This removes the entire index directory and creates a fresh, empty index.
+        
+        Raises:
+            Exception: If index clearing fails
+        """
+        import shutil
+        
+        logger.info(f"Clearing graph search index at {self.index_path}")
+        try:
+            # Remove the entire index directory if it exists
+            if self.index_path.exists():
+                shutil.rmtree(self.index_path)
+                logger.debug(f"Removed graph index directory: {self.index_path}")
+            
+            # Reinitialize with empty index
+            self._initialize_index()
+            logger.info(f"Successfully cleared and reinitialized graph search index")
+            
+        except Exception as e:
+            logger.error(f"Failed to clear graph search index: {e}")
+            raise
+    
     def get_writer(self):
         """Get an index writer.
         
@@ -537,7 +587,36 @@ class GraphSearchIndex:
                 except Exception as e:
                     logger.warning(f"Error in fallback search for object {urn}: {e}")
         
-        return neighbors
+                return neighbors
+    
+    def delete_document(self, writer, urn: str):
+        """Delete all triples involving a document URN from the index.
+        
+        This removes all triples where the document appears as either subject or object.
+        
+        Args:
+            writer: Tantivy IndexWriter
+            urn: Document URN to remove all triples for
+        """
+        # Import Occur enum for boolean operations
+        try:
+            from tantivy import Occur
+        except ImportError:
+            Occur = self.tantivy.Occur
+        
+        # Create queries to find triples where URN is subject or object
+        subject_query = self.tantivy.Query.term_query(self.schema, "subject", urn)
+        object_query = self.tantivy.Query.term_query(self.schema, "object", urn)
+        
+        # Combine with OR - we want triples where URN appears in either position
+        combined_query = self.tantivy.Query.boolean_query([
+            (Occur.Should, subject_query),
+            (Occur.Should, object_query)
+        ])
+        
+        # Delete all matching documents
+        writer.delete_documents_by_query(combined_query)
+        logger.debug(f"Deleted all triples involving document: {urn}")
 
 
 class Reranker:

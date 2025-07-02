@@ -30,6 +30,7 @@ The architecture uses a domain-specific manager pattern with multi-layered secur
   - `PythonManager`: Sandboxed Python code execution
   - `FileManager`: Safe file operations
   - `WebManager`: Secure web browsing and scraping
+  - `KnowledgeBaseManager`: Structured document storage with semantic search
 
 - **Configurable Environment**
   - Extensive configuration via environment variables
@@ -280,6 +281,292 @@ Interactively browses a website using Playwright.
 }
 ```
 
+### Knowledge Base Operations
+
+The knowledge base system provides structured document storage with semantic search capabilities, RDF-style relationships, and metadata management. Documents are organized in a hierarchical namespace structure and support preferences (arbitrary RDF triples) and references (links between documents).
+
+#### Document Path Format
+
+Knowledge base documents use a structured path format: `namespace/collection[/subcollection]*/name`
+
+- **namespace**: Top-level organizational unit (e.g., "projects", "research")
+- **collection**: Main category within namespace (e.g., "documentation", "notes")
+- **subcollection**: Optional nested categories (e.g., "api", "tutorials")
+- **name**: Document identifier (e.g., "getting-started", "user-guide")
+
+Examples:
+- `projects/docs/api-reference`
+- `research/papers/machine-learning/transformers`
+- `personal/notes/meeting-2024-01-15`
+
+#### `kb_create_document`
+Creates a new document in the knowledge base with metadata but no content.
+
+- **Parameters**:
+  - `path` (string, required): Document path in format "namespace/collection[/subcollection]*/name"
+  - `metadata` (object, optional): Document metadata (default: {})
+- **Returns**:
+  - Complete document index object with creation details
+- **Notes**: This is part of a two-step process. Create the document first, then add content with `kb_write_content`.
+
+```json
+{
+  "namespace": "projects",
+  "collection": "docs",
+  "name": "api-reference",
+  "type": "document",
+  "subtype": "text",
+  "created_at": "2024-01-15T10:30:00.000Z",
+  "updated_at": "2024-01-15T10:30:00.000Z",
+  "content_type": "text/plain",
+  "chunked": false,
+  "fragments": {},
+  "preferences": [],
+  "references": [],
+  "referenced_by": [],
+  "indices": [],
+  "metadata": {"author": "John Doe", "version": "1.0"}
+}
+```
+
+#### `kb_write_content`
+Writes content to an existing document in the knowledge base.
+
+- **Parameters**:
+  - `path` (string, required): Document path
+  - `content` (string, required): Document content
+  - `force` (boolean, optional): Whether to overwrite existing content (default: false)
+- **Returns**:
+  - Complete updated document index object
+- **Notes**: Document must be created first using `kb_create_document`.
+
+```json
+{
+  "namespace": "projects",
+  "collection": "docs", 
+  "name": "api-reference",
+  "type": "document",
+  "subtype": "text",
+  "created_at": "2024-01-15T10:30:00.000Z",
+  "updated_at": "2024-01-15T10:35:00.000Z",
+  "content_type": "text/plain",
+  "chunked": false,
+  "fragments": {},
+  "preferences": [],
+  "references": [],
+  "referenced_by": [],
+  "indices": [],
+  "metadata": {"author": "John Doe", "version": "1.0"}
+}
+```
+
+#### `kb_read`
+Reads document data from the knowledge base.
+
+- **Parameters**:
+  - `path` (string, required): Document path
+  - `include_content` (boolean, optional): Whether to include document content (default: true)
+  - `include_index` (boolean, optional): Whether to include document metadata (default: true)
+- **Returns**:
+  - Document data based on requested components
+
+```json
+{
+  "status": "success",
+  "path": "projects/docs/api-reference",
+  "content": "This is the API reference content...",
+  "index": {
+    "namespace": "projects",
+    "collection": "docs",
+    "name": "api-reference",
+    "created_at": "2024-01-15T10:30:00Z",
+    "metadata": {"author": "John Doe"}
+  }
+}
+```
+
+#### `kb_update_metadata`
+Updates metadata for a document in the knowledge base.
+
+- **Parameters**:
+  - `path` (string, required): Document path
+  - `metadata` (object, required): Metadata to update
+- **Returns**:
+  - Complete updated document index object
+
+```json
+{
+  "namespace": "projects",
+  "collection": "docs",
+  "name": "api-reference",
+  "type": "document",
+  "subtype": "text", 
+  "created_at": "2024-01-15T10:30:00.000Z",
+  "updated_at": "2024-01-15T10:40:00.000Z",
+  "content_type": "text/plain",
+  "chunked": false,
+  "fragments": {},
+  "preferences": [],
+  "references": [],
+  "referenced_by": [],
+  "indices": [],
+  "metadata": {"author": "John Doe", "version": "1.1", "reviewed": true}
+}
+```
+
+#### `kb_manage_triples`
+Manages RDF triples (preferences and references) for documents.
+
+- **Parameters**:
+  - `action` (string, required): Action to perform ("add" or "remove")
+  - `triple_type` (string, required): Type of triple ("preference" or "reference")
+  - `path` (string, required): Source document path
+  - `predicate` (string, required): Predicate of the triple
+  - `object` (string, optional): Object of the triple (for preferences) or relation name (for references)
+  - `ref_path` (string, optional): Referenced document path (for references only)
+- **Returns**:
+  - Operation status and updated counts
+
+**Adding a preference (arbitrary RDF triple):**
+```json
+{
+  "status": "updated",
+  "preference_count": 3,
+  "action": "add",
+  "triple_type": "preference"
+}
+```
+
+**Adding a reference (link to another document):**
+```json
+{
+  "status": "success",
+  "message": "Reference added",
+  "added": true,
+  "action": "add",
+  "triple_type": "reference"
+}
+```
+
+**Removing a reference:**
+```json
+{
+  "status": "updated",
+  "reference_count": 2,
+  "action": "remove",
+  "triple_type": "reference"
+}
+```
+
+#### `kb_search`
+Searches the knowledge base using text queries and/or graph expansion.
+
+- **Parameters**:
+  - `query` (string, optional): Text query for semantic search and reranking
+  - `graph_seed_urns` (array, optional): Starting URNs for graph expansion
+  - `graph_expand_hops` (integer, optional): Number of relationship hops to expand (default: 0)
+  - `filter_urns` (array, optional): URNs to exclude from results
+  - `relation_predicates` (array, optional): Predicates to follow during graph traversal (default: ["references"])
+  - `top_k` (integer, optional): Number of results to return (default: 10)
+  - `include_content` (boolean, optional): Whether to include document content (default: false)
+  - `include_index` (boolean, optional): Whether to include document metadata (default: false)
+  - `use_reranker` (boolean, optional): Whether to use semantic reranking (default: true)
+- **Returns**:
+  - Ranked list of search results
+
+```json
+{
+  "results": [
+    {
+      "urn": "kb:///projects/docs/api-reference",
+      "score": 0.95,
+      "content": "API reference content...",
+      "index": {
+        "namespace": "projects",
+        "collection": "docs",
+        "name": "api-reference"
+      }
+    }
+  ],
+  "count": 1
+}
+```
+
+#### `kb_list_documents`
+Lists documents in the knowledge base.
+
+- **Parameters**:
+  - `path` (string, optional): Path prefix to filter by
+  - `recursive` (boolean, optional): Whether to list recursively (default: true)
+- **Returns**:
+  - List of document paths
+
+```json
+{
+  "documents": [
+    "projects/docs/api-reference",
+    "projects/docs/user-guide",
+    "research/papers/transformers"
+  ],
+  "count": 3
+}
+```
+
+#### `kb_manage`
+Manages knowledge base operations like moving documents and rebuilding search indices.
+
+- **Parameters**:
+  - `action` (string, required): Management action to perform
+    - `"move_document"`: Move a document (requires `path` and `new_path`)
+    - `"delete"`: Archive a document (requires `path`)
+    - `"rebuild_search_index"`: Rebuild search indices (optional `rebuild_all`)
+  - Additional parameters depend on the action
+- **Returns**:
+  - Operation status and results
+
+**Moving a document:**
+```json
+{
+  "action": "move_document",
+  "status": "success",
+  "old_path": "projects/docs/old-name",
+  "new_path": "projects/docs/new-name",
+  "result": {
+    "namespace": "projects",
+    "collection": "docs",
+    "name": "new-name",
+    "type": "document",
+    "subtype": "text",
+    "created_at": "2024-01-15T10:30:00.000Z",
+    "updated_at": "2024-01-15T10:50:00.000Z",
+    "content_type": "text/plain",
+    "chunked": false,
+    "fragments": {},
+    "preferences": [],
+    "references": [],
+    "referenced_by": [],
+    "indices": [],
+    "metadata": {}
+  }
+}
+```
+
+**Archiving a document:**
+```json
+{
+  "action": "delete",
+  "status": "success", 
+  "path": "projects/docs/obsolete",
+  "result": {
+    "status": "archived",
+    "message": "Document archived: urn:kb:projects/docs/obsolete",
+    "original_path": "projects/docs/obsolete",
+    "archive_path": "archive/projects/docs/obsolete",
+    "archive_urn": "urn:kb:archive/projects/docs/obsolete"
+  }
+}
+```
+
 ## Execution Environment
 
 Container-MCP provides isolated execution environments for different types of operations, each with its own security measures and resource constraints.
@@ -350,6 +637,19 @@ The web environment provides controlled access to external resources:
 - **Content Sanitization**: All content parsed and sanitized
 - **Network Isolation**: Separate network namespace via container
 
+### Knowledge Base Environment
+
+The knowledge base environment provides structured document storage and semantic search:
+
+- **Hierarchical Organization**: Documents organized in namespace/collection/name structure
+- **Metadata Management**: Rich metadata support with RDF-style triples
+- **Semantic Search**: Full-text search with sparse indexing and semantic reranking
+- **Graph Relationships**: Document references with relationship traversal
+- **Path Validation**: Strict path validation and normalization
+- **Search Indices**: Separate sparse and graph indices for optimal performance
+- **Timeout Control**: Configurable timeouts for operations (default: 30s, max: 120s)
+- **Isolation**: Knowledge base operations restricted to configured storage path
+
 ## Architecture
 
 The project follows a modular architecture:
@@ -361,7 +661,16 @@ container-mcp/
 │   │   ├── bash_manager.py   # Secure bash execution
 │   │   ├── python_manager.py # Secure python execution
 │   │   ├── file_manager.py   # Secure file operations
-│   │   └── web_manager.py    # Secure web operations
+│   │   ├── web_manager.py    # Secure web operations
+│   │   └── knowledge_base_manager.py # Knowledge base operations
+│   ├── kb/                   # Knowledge base components
+│   │   ├── document_store.py # Document storage and retrieval
+│   │   ├── models.py         # Data models and schemas
+│   │   ├── path.py           # Path parsing and validation
+│   │   └── search.py         # Search indices and ranking
+│   ├── tools/                # MCP tool implementations
+│   │   ├── kb.py             # Knowledge base tools
+│   │   └── ...               # Other tool modules
 │   ├── utils/                # Utility functions
 │   ├── config.py             # Configuration system
 │   └── main.py               # MCP server setup
@@ -369,6 +678,11 @@ container-mcp/
 ├── config/                   # Configuration files
 ├── bin/                      # Build/run scripts
 ├── data/                     # Data directory
+├── kb/                       # Knowledge base storage
+│   ├── search/               # Search indices
+│   │   ├── sparse_idx/       # Sparse search index
+│   │   └── graph_idx/        # Graph search index
+│   └── documents/            # Structured document storage
 ├── logs/                     # Log directory
 ├── sandbox/                  # Sandboxed execution space
 │   ├── bash/                 # Bash sandbox
@@ -539,6 +853,26 @@ FILE_ALLOWED_EXTENSIONS=txt,md,csv,json,py
 # Web Manager Configuration
 WEB_TIMEOUT_DEFAULT=30
 WEB_ALLOWED_DOMAINS=*
+```
+
+### Knowledge Base Manager Configuration
+
+```
+# Knowledge Base Manager Configuration
+CMCP_KB_STORAGE_PATH=/app/kb
+KB_TIMEOUT_DEFAULT=30
+KB_TIMEOUT_MAX=120
+
+# Search Configuration
+CMCP_KB_SEARCH_ENABLED=true
+CMCP_KB_SPARSE_INDEX_PATH=/app/kb/search/sparse_idx
+CMCP_KB_GRAPH_INDEX_PATH=/app/kb/search/graph_idx
+CMCP_KB_RERANKER_MODEL=mixedbread-ai/mxbai-rerank-base-v1
+CMCP_KB_SEARCH_RELATION_PREDICATES=references
+CMCP_KB_SEARCH_GRAPH_NEIGHBOR_LIMIT=1000
+
+# Tool Enable/Disable
+TOOLS_ENABLE_KB=true
 ```
 
 ## Development

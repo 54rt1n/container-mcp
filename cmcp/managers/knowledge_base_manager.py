@@ -824,7 +824,7 @@ class KnowledgeBaseManager:
                     
                     async with self.graph_index_lock:
                         await asyncio.to_thread(
-                            self._delete_document_from_graph_sync,
+                            self._delete_document_from_graph_using_index,
                             components.urn
                         )
                         
@@ -837,7 +837,6 @@ class KnowledgeBaseManager:
         archive_components = PathComponents(
             namespace="archive",
             collection=components.namespace,
-            subcollections=components.subcollections + [components.collection] if components.subcollections else [components.collection],
             name=components.name
         )
         
@@ -963,7 +962,7 @@ class KnowledgeBaseManager:
                     async with self.graph_index_lock:
                         # Run blocking Tantivy operations in a separate thread
                         await asyncio.to_thread(
-                            self._delete_document_from_graph_sync,
+                            self._delete_document_from_graph_using_index,
                             components.urn
                         )
                         
@@ -1193,9 +1192,11 @@ class KnowledgeBaseManager:
                 recovery_status["graph_index"]["status"] = "error"
                 recovery_status["graph_index"]["error"] = str(e)
         
-        # If rebuild_all is requested, repopulate indices with existing documents
+        # If rebuild_all is requested, clear indices and repopulate with existing documents
         if rebuild_all:
             try:
+                self.logger.info("Clearing existing indices for full rebuild...")
+                await self._clear_indices_for_rebuild(recovery_status)
                 self.logger.info("Rebuilding indices from existing documents...")
                 await self._rebuild_indices_from_documents(recovery_status)
                 self.logger.info("Index rebuild completed")
@@ -1206,6 +1207,43 @@ class KnowledgeBaseManager:
         self.logger.info(f"Search index recovery completed: {recovery_status}")
         return recovery_status
     
+    async def _clear_indices_for_rebuild(self, recovery_status: Dict[str, Any]) -> None:
+        """Clear existing search indices completely for a full rebuild.
+        
+        This removes all existing index data and reinitializes empty indices.
+        
+        Args:
+            recovery_status: Status dictionary to update with clear status
+        """
+        recovery_status["sparse_index_clear"] = {"status": "skipped", "error": None}
+        recovery_status["graph_index_clear"] = {"status": "skipped", "error": None}
+        
+        # Clear sparse search index
+        if self.sparse_search_index:
+            try:
+                self.logger.info("Clearing sparse search index...")
+                async with self.sparse_index_lock:
+                    await asyncio.to_thread(self.sparse_search_index.clear_index)
+                recovery_status["sparse_index_clear"]["status"] = "cleared"
+                self.logger.info("Sparse search index cleared successfully")
+            except Exception as e:
+                self.logger.error(f"Failed to clear sparse search index: {e}", exc_info=True)
+                recovery_status["sparse_index_clear"]["status"] = "error"
+                recovery_status["sparse_index_clear"]["error"] = str(e)
+        
+        # Clear graph search index
+        if self.graph_search_index:
+            try:
+                self.logger.info("Clearing graph search index...")
+                async with self.graph_index_lock:
+                    await asyncio.to_thread(self.graph_search_index.clear_index)
+                recovery_status["graph_index_clear"]["status"] = "cleared"
+                self.logger.info("Graph search index cleared successfully")
+            except Exception as e:
+                self.logger.error(f"Failed to clear graph search index: {e}", exc_info=True)
+                recovery_status["graph_index_clear"]["status"] = "error"
+                recovery_status["graph_index_clear"]["error"] = str(e)
+    
     async def _rebuild_indices_from_documents(self, recovery_status: Dict[str, Any]) -> None:
         """Rebuild search indices from all existing documents.
         
@@ -1214,12 +1252,57 @@ class KnowledgeBaseManager:
         """
         # Get all documents
         all_documents = await self.list_documents(recursive=True)
-        recovery_status["total_documents"] = len(all_documents)
+        
+        # Filter out archive documents and search index directories
+        filtered_documents = []
+        for doc_path in all_documents:
+            try:
+                components = PathComponents.parse_path(doc_path)
+                
+                # Skip archived documents (namespace = "archive")
+                if components.namespace == "archive":
+                    self.logger.debug(f"Skipping archived document: {doc_path}")
+                    continue
+                
+                # Skip documents that might be in search index directories
+                # Check if the document path is within the search index paths
+                try:
+                    doc_abs_path = os.path.abspath(os.path.join(self.storage_path, components.path))
+                    
+                    if self.sparse_index_path:
+                        sparse_abs_path = os.path.abspath(self.sparse_index_path)
+                        if doc_abs_path.startswith(sparse_abs_path + os.sep) or doc_abs_path == sparse_abs_path:
+                            self.logger.debug(f"Skipping document in sparse index directory: {doc_path}")
+                            continue
+                    
+                    if self.graph_index_path:
+                        graph_abs_path = os.path.abspath(self.graph_index_path)
+                        if doc_abs_path.startswith(graph_abs_path + os.sep) or doc_abs_path == graph_abs_path:
+                            self.logger.debug(f"Skipping document in graph index directory: {doc_path}")
+                            continue
+                except (OSError, ValueError):
+                    # If path operations fail, continue processing the document
+                    pass
+                
+                filtered_documents.append(doc_path)
+                
+            except Exception as e:
+                self.logger.warning(f"Error filtering document {doc_path}: {e}")
+                # Include document in processing if we can't parse it - let later processing handle it
+                filtered_documents.append(doc_path)
+        
+        recovery_status["total_documents_found"] = len(all_documents)
+        recovery_status["total_documents"] = len(filtered_documents)
+        recovery_status["skipped_documents"] = len(all_documents) - len(filtered_documents)
+        
+        self.logger.info(f"Found {recovery_status['total_documents_found']} documents total, "
+                        f"filtered {recovery_status['skipped_documents']} documents "
+                        f"(archived/search directories), processing {recovery_status['total_documents']} documents")
         
         docs_processed = 0
         triples_processed = 0
         
-        for doc_path in all_documents:
+        for doc_path in filtered_documents:
             try:
                 components = PathComponents.parse_path(doc_path)
                 
@@ -1271,7 +1354,7 @@ class KnowledgeBaseManager:
                     docs_processed += 1
                     
                     if docs_processed % 100 == 0:
-                        self.logger.info(f"Processed {docs_processed}/{len(all_documents)} documents...")
+                        self.logger.info(f"Processed {docs_processed}/{len(filtered_documents)} documents...")
                         
                 except FileNotFoundError:
                     self.logger.warning(f"Document or content not found for {doc_path}, skipping")
@@ -1691,7 +1774,7 @@ class KnowledgeBaseManager:
                 except Exception as e_commit:
                     self.logger.error(f"Failed to commit writer after exception: {e_commit}")
 
-    def _delete_document_from_graph_sync(self, urn: str) -> None:
+    def _delete_document_from_graph_using_index(self, urn: str) -> None:
         """Synchronous method to remove a document from graph index.
         
         This removes all triples where the document is either subject or object.
@@ -1702,24 +1785,16 @@ class KnowledgeBaseManager:
         Raises:
             Exception: If index update fails
         """
-        import tantivy
         writer = None
         try:
             writer = self.graph_search_index.get_writer()
-            # Create a query to match all triples where this document is either subject or object
-            subject_term = tantivy.Term.from_field_text("subject", urn)
-            object_term = tantivy.Term.from_field_text("object", urn)
-            
-            query = tantivy.Query.boolean()
-            query.add_should(tantivy.Query.term(subject_term))
-            query.add_should(tantivy.Query.term(object_term))
-            
-            writer.delete_query(query)
+            # Use the proper method from GraphSearchIndex
+            self.graph_search_index.delete_document(writer, urn)
             # Commit when successful
             writer.commit()
             writer = None  # Prevent double-commit in finally block
         except Exception as e:
-            self.logger.error(f"Tantivy graph document removal failed: {e}")
+            self.logger.error(f"Graph index document removal failed: {e}")
             raise
         finally:
             # If writer wasn't committed due to an exception, commit it to release resources
@@ -1834,18 +1909,12 @@ class KnowledgeBaseManager:
             # Search for all triples containing the old URN
             searcher = self.graph_search_index.index.searcher()
             
-            # Import Occur enum for boolean operations
-            try:
-                from tantivy import Occur
-            except ImportError:
-                Occur = self.graph_search_index.tantivy.Occur
-            
             # Find triples where old URN is subject
-            subject_query = tantivy.Query.term_query(self.graph_search_index.schema, "subject", old_urn)
+            subject_query = self.graph_search_index.tantivy.Query.term_query(self.graph_search_index.schema, "subject", old_urn)
             subject_results = searcher.search(subject_query, limit=10000)
             
             # Find triples where old URN is object  
-            object_query = tantivy.Query.term_query(self.graph_search_index.schema, "object", old_urn)
+            object_query = self.graph_search_index.tantivy.Query.term_query(self.graph_search_index.schema, "object", old_urn)
             object_results = searcher.search(object_query, limit=10000)
             
             # Process subject matches (old URN is subject)

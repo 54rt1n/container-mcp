@@ -62,7 +62,7 @@ dependencies = [
     "pyyaml>=6.0",
     
     # Search capabilities
-    "tantivy>=0.22.2",
+    "tantivy>=0.24.0",
     "sentence-transformers>=4.0.1",
     
     # System monitoring

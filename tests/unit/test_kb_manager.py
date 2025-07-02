@@ -339,7 +339,7 @@ async def test_delete_document(mock_to_thread, kb_manager, mock_doc_store, sampl
     # Check for specific calls by examining each call's arguments
     method_calls = [call_args[0][0] for call_args in mock_to_thread.await_args_list]
     assert kb_manager._delete_sparse_index_sync in method_calls
-    assert kb_manager._delete_document_from_graph_sync in method_calls
+    assert kb_manager._delete_document_from_graph_using_index in method_calls
     
     # Verify result
     assert result["status"] == "deleted"

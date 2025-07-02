@@ -477,25 +477,33 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
 
 
     @mcp.tool()
-    async def kb_manage(action: str, **kwargs) -> Dict[str, Any]:
+    async def kb_manage(action: str, options: Dict[str, Any]) -> Dict[str, Any]:
         """Manage knowledge base operations like rebuilding search indices and moving documents.
         
         Args:
             action: Management action to perform. Supported actions:
                    - "rebuild_search_index": Rebuild search indices from scratch
-                     Parameters: rebuild_all (bool, default: True)
+                     optional parameters: rebuild_all (bool, default: True)
                    - "move_document": Move a document to a new location
-                     Parameters: path (str, required), new_path (str, required)
+                     required parameters: path (str, required), new_path (str, required)
                    - "delete": Archive a document
-                     Parameters: path (str, required)
-            **kwargs: Additional parameters for the specific action
+                     required parameters: path (str, required)
+            options: Additional parameters for the specific action
+
+            Example:
+            {
+                "action": "rebuild_search_index",
+                "options": {
+                    "rebuild_all": True
+                }
+            }
             
         Returns:
             Dictionary with operation status and results
         """
         try:
             if action == "rebuild_search_index":
-                rebuild_all = kwargs.get("rebuild_all", True)
+                rebuild_all = options.get("rebuild_all", True)
                 result = await kb_manager.recover_search_indices(rebuild_all=rebuild_all)
                 return {
                     "action": action,
@@ -505,8 +513,8 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
             
             elif action == "move_document":
                 # Validate required parameters
-                path = kwargs.get("path")
-                new_path = kwargs.get("new_path")
+                path = options.get("path")
+                new_path = options.get("new_path")
                 
                 if not path:
                     return {
@@ -542,7 +550,7 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
             
             elif action == "delete":
                 # Validate required parameters
-                path = kwargs.get("path")
+                path = options.get("path")
                 
                 if not path:
                     return {
