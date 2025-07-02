@@ -51,44 +51,6 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
             }
     
     @mcp.tool()
-    async def kb_list_documents(path: Optional[str] = None,
-                              recursive: bool = True) -> Dict[str, Any]:
-        """List documents in the knowledge base.
-        
-        Args:
-            path: Optional path prefix to filter by
-            recursive: Whether to list recursively
-            
-        Returns:
-            Dictionary with list of document locations
-        """
-        try:
-            components = None
-            
-            if path:
-                # Parse the path to get namespace/collection
-                components = PartialPathComponents.parse_path(path)
-            
-            # List documents using components
-            documents = await kb_manager.list_documents(
-                components=components,
-                recursive=recursive
-            )
-            
-            return {"documents": documents, "count": len(documents)}
-        except ValueError as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-        except Exception as e:
-            logger.error(f"Error listing documents: {e}", exc_info=True, stack_info=True)
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-
-    @mcp.tool()
     async def kb_search(query: Optional[str] = None,
                       graph_seed_urns: Optional[List[str]] = None,
                       graph_expand_hops: int = 0,
@@ -138,6 +100,159 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
         except Exception as e:
             logger.error(f"Error during kb_search: {e}", exc_info=True)
             return {"status": "error", "error": f"An unexpected error occurred: {str(e)}"}
+
+    @mcp.tool()
+    async def kb_read(path: Optional[str] = None,
+                     recursive: bool = True,
+                     include_content: bool = False,
+                     include_index: bool = False) -> Dict[str, Any]:
+        """Read from the knowledge base - either list documents or read specific document data.
+        
+        This function intelligently handles both listing and reading based on the path:
+        - If path is None, partial, or points to a namespace/collection: lists documents
+        - If path points to a specific document: reads document content/metadata
+        
+        Args:
+            path: Document/collection path. None lists all documents.
+            recursive: Whether to list recursively (for listing mode)
+            include_content: Whether to include document content (for reading mode)
+            include_index: Whether to include document metadata (for reading mode)
+            
+        Returns:
+            Dictionary with either document list or document data
+        """
+        async def _process_document_list(documents, include_content, include_index):
+            """Helper to process a list of documents and optionally include their content/index."""
+            if not include_content and not include_index:
+                # Simple list mode
+                return {"documents": documents, "count": len(documents), "mode": "list"}
+            
+            # Bulk read mode - fetch content/index for each document
+            processed_docs = []
+            for doc_path in documents:
+                try:
+                    components = PathComponents.parse_path(doc_path)
+                    doc_data = {"path": doc_path}
+                    
+                    # Read index if requested
+                    if include_index:
+                        try:
+                            index = await kb_manager.read_index(components)
+                            doc_data["index"] = index.model_dump()
+                        except FileNotFoundError:
+                            doc_data["index_error"] = "Index not found"
+                        except Exception as e:
+                            doc_data["index_error"] = str(e)
+                    
+                    # Read content if requested
+                    if include_content:
+                        try:
+                            content = await kb_manager.read_content(components)
+                            doc_data["content"] = content
+                        except FileNotFoundError:
+                            doc_data["content_error"] = "Content not found"
+                        except Exception as e:
+                            doc_data["content_error"] = str(e)
+                    
+                    processed_docs.append(doc_data)
+                except Exception as e:
+                    # If we can't parse the path, include it with an error
+                    processed_docs.append({
+                        "path": doc_path,
+                        "error": f"Failed to parse path: {str(e)}"
+                    })
+            
+            return {
+                "documents": processed_docs, 
+                "count": len(processed_docs), 
+                "mode": "bulk_read",
+                "include_content": include_content,
+                "include_index": include_index
+            }
+        
+        try:
+            # If no path provided, list all documents
+            if not path:
+                documents = await kb_manager.list_documents(recursive=recursive)
+                return await _process_document_list(documents, include_content, include_index)
+            
+            # Parse the path to determine what we're dealing with
+            try:
+                # Try to parse as a complete document path first
+                components = PathComponents.parse_path(path)
+                
+                # Check if this document actually exists
+                if await kb_manager.check_index(components):
+                    # This is a specific document - read it
+                    if not include_content and not include_index:
+                        # Default to including both if neither specified for document reading
+                        include_content = True
+                        include_index = True
+                    
+                    result = {
+                        "status": "success",
+                        "path": path,
+                        "mode": "read"
+                    }
+                    
+                    # Read index if requested
+                    if include_index:
+                        try:
+                            index = await kb_manager.read_index(components)
+                            result["index"] = index.model_dump()
+                        except FileNotFoundError as e:
+                            return {
+                                "status": "error",
+                                "error": f"Document index not found: {str(e)}"
+                            }
+                    
+                    # Read content if requested
+                    if include_content:
+                        try:
+                            content = await kb_manager.read_content(components)
+                            result["content"] = content
+                        except FileNotFoundError as e:
+                            # If index was successfully read but content is missing,
+                            # return partial success with a warning
+                            if include_index and "index" in result:
+                                result["content"] = None
+                                result["content_warning"] = f"Content not found: {str(e)}"
+                            else:
+                                return {
+                                    "status": "error",
+                                    "error": f"Document content not found: {str(e)}"
+                                }
+                    
+                    return result
+                else:
+                    # Document doesn't exist, treat as partial path for listing
+                    partial_components = PartialPathComponents.parse_path(path)
+                    documents = await kb_manager.list_documents(
+                        components=partial_components,
+                        recursive=recursive
+                    )
+                    return await _process_document_list(documents, include_content, include_index)
+                    
+            except ValueError:
+                # Path couldn't be parsed as complete document path, treat as partial
+                partial_components = PartialPathComponents.parse_path(path)
+                documents = await kb_manager.list_documents(
+                    components=partial_components,
+                    recursive=recursive
+                )
+                return await _process_document_list(documents, include_content, include_index)
+                
+        except ValueError as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+        except Exception as e:
+            logger.error(f"Error in kb_read: {e}", exc_info=True, stack_info=True)
+            return {
+                "status": "error",
+                "error": str(e)
+            }
     
     @mcp.tool()
     async def kb_create_document(path: str,
@@ -243,125 +358,15 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                 "error": str(e)
             }
     
-    @mcp.tool()
-    async def kb_read(path: str, 
-                     include_content: bool = True,
-                     include_index: bool = True) -> Dict[str, Any]:
-        """Read document data from the knowledge base.
-        
-        Args:
-            path: Document path in format "namespace/collection[/subcollection]*/name"
-            include_content: Whether to include document content in the response
-            include_index: Whether to include document index/metadata in the response
-            
-        Returns:
-            Dictionary with document data based on requested components
-        """
-        try:
-            # Validate that at least one component is requested
-            if not include_content and not include_index:
-                return {
-                    "status": "error",
-                    "error": "At least one of include_content or include_index must be True"
-                }
-            
-            # Parse the path
-            components = PathComponents.parse_path(path)
-            
-            result = {
-                "status": "success",
-                "path": path
-            }
-            
-            # Read index if requested
-            if include_index:
-                try:
-                    index = await kb_manager.read_index(components)
-                    result["index"] = index.model_dump()
-                except FileNotFoundError as e:
-                    return {
-                        "status": "error",
-                        "error": f"Document index not found: {str(e)}"
-                    }
-            
-            # Read content if requested
-            if include_content:
-                try:
-                    content = await kb_manager.read_content(components)
-                    result["content"] = content
-                except FileNotFoundError as e:
-                    # If index was successfully read but content is missing, 
-                    # return partial success with a warning
-                    if include_index and "index" in result:
-                        result["content"] = None
-                        result["content_warning"] = f"Content not found: {str(e)}"
-                    else:
-                        return {
-                            "status": "error",
-                            "error": f"Document content not found: {str(e)}"
-                        }
-            
-            return result
-            
-        except ValueError as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-        except Exception as e:
-            logger.error(f"Error reading document at {path}: {e}", exc_info=True, stack_info=True)
-            return {
-                "status": "error",
-                "error": str(e)
-            }
+
 
     @mcp.tool()
-    async def kb_update_metadata(path: str,
-                               metadata: Dict[str, Any]) -> Dict[str, Any]:
-        """Update metadata for a document in the knowledge base.
-        
-        Args:
-            path: Document path in format "namespace/collection[/subcollection]*/name"
-            metadata: Document metadata
-            
-        Returns:
-            Dictionary with document location and status
-        """
-        try:
-            # Parse the path to get components
-            components = PathComponents.parse_path(path)
-            
-            # Update metadata with the components
-            index = await kb_manager.update_metadata(
-                components=components,
-                metadata=metadata
-            )
-            
-            return index.model_dump()
-        except ValueError as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-        except FileNotFoundError as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-        except Exception as e:
-            logger.error(f"Error updating metadata for {path}: {e}", exc_info=True, stack_info=True)
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-
-    @mcp.tool()
-    async def kb_manage_triples(action: str,
-                               triple_type: str,
-                               path: str,
-                               predicate: str,
-                               object: Optional[str] = None,
-                               ref_path: Optional[str] = None) -> Dict[str, Any]:
+    async def kb_update_triples(action: str,
+                                triple_type: str,
+                                path: str,
+                                predicate: str,
+                                object: Optional[str] = None,
+                                ref_path: Optional[str] = None) -> Dict[str, Any]:
         """Manage RDF triples (preferences and references) for documents.
         
         Args:
@@ -470,6 +475,46 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
             return {
                 "action": action,
                 "triple_type": triple_type,
+                "status": "error",
+                "error": str(e)
+            }
+
+    @mcp.tool()
+    async def kb_update_metadata(path: str,
+                               metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """Update metadata for a document in the knowledge base.
+        
+        Args:
+            path: Document path in format "namespace/collection[/subcollection]*/name"
+            metadata: Document metadata
+            
+        Returns:
+            Dictionary with document location and status
+        """
+        try:
+            # Parse the path to get components
+            components = PathComponents.parse_path(path)
+            
+            # Update metadata with the components
+            index = await kb_manager.update_metadata(
+                components=components,
+                metadata=metadata
+            )
+            
+            return index.model_dump()
+        except ValueError as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+        except FileNotFoundError as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+        except Exception as e:
+            logger.error(f"Error updating metadata for {path}: {e}", exc_info=True, stack_info=True)
+            return {
                 "status": "error",
                 "error": str(e)
             }

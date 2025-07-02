@@ -478,14 +478,39 @@ Searches the knowledge base using text queries and/or graph expansion.
 {
   "results": [
     {
-      "urn": "kb:///projects/docs/api-reference",
-      "score": 0.95,
+      "urn": "kb://projects/docs/api-reference",
+      "sparse_score": 1.95,
       "content": "API reference content...",
       "index": {
         "namespace": "projects",
         "collection": "docs",
-        "name": "api-reference"
-      }
+        "name": "api-reference",
+        "type": "document",
+        "subtype": "text",
+        "created_at": "2025-07-02T23:13:17.362283Z",
+        "updated_at": "2025-07-02T23:18:23.396660Z",
+        "content_type": "text/plain",
+        "chunked": false,
+        "fragments": {},
+        "preferences": [],
+        "references": [
+          [
+            "references",
+            "kb://project/docs/api-dto"
+          ]
+        ],
+        "referenced_by": [],
+        "indices": [],
+        "metadata": {
+          "purpose": "testing_collection_organization",
+          "created_for": "kb_exercise",
+          "type": "test_document",
+          "created_date": "2025-07-02",
+          "topic": "search_performance",
+          "related_to": "rebuild_test"
+        }
+      },
+      "rerank_score": 0.84,
     }
   ],
   "count": 1
@@ -559,10 +584,10 @@ Manages knowledge base operations like moving documents and rebuilding search in
   "path": "projects/docs/obsolete",
   "result": {
     "status": "archived",
-    "message": "Document archived: urn:kb:projects/docs/obsolete",
+    "message": "Document archived: kb://projects/docs/obsolete",
     "original_path": "projects/docs/obsolete",
     "archive_path": "archive/projects/docs/obsolete",
-    "archive_urn": "urn:kb:archive/projects/docs/obsolete"
+    "archive_urn": "kb://archive/projects/docs/obsolete"
   }
 }
 ```
@@ -654,43 +679,71 @@ The knowledge base environment provides structured document storage and semantic
 
 The project follows a modular architecture:
 
-```
+```bash
 container-mcp/
 ├── cmcp/                     # Main application code
 │   ├── managers/             # Domain-specific managers
 │   │   ├── bash_manager.py   # Secure bash execution
-│   │   ├── python_manager.py # Secure python execution
 │   │   ├── file_manager.py   # Secure file operations
-│   │   ├── web_manager.py    # Secure web operations
-│   │   └── knowledge_base_manager.py # Knowledge base operations
+│   │   ├── knowledge_base_manager.py # Knowledge base operations
+│   │   ├── python_manager.py # Secure python execution
+│   │   └── web_manager.py    # Secure web operations
 │   ├── kb/                   # Knowledge base components
 │   │   ├── document_store.py # Document storage and retrieval
 │   │   ├── models.py         # Data models and schemas
 │   │   ├── path.py           # Path parsing and validation
 │   │   └── search.py         # Search indices and ranking
 │   ├── tools/                # MCP tool implementations
+│   │   ├── file.py           # File operation tools
 │   │   ├── kb.py             # Knowledge base tools
-│   │   └── ...               # Other tool modules
+│   │   ├── system.py         # System operation tools
+│   │   └── web.py            # Web operation tools
 │   ├── utils/                # Utility functions
+│   │   └── logging.py        # Logging utilities
+│   ├── __init__.py
 │   ├── config.py             # Configuration system
 │   └── main.py               # MCP server setup
 ├── apparmor/                 # AppArmor profiles
-├── config/                   # Configuration files
+│   ├── mcp-bash              # Bash execution profile
+│   └── mcp-python            # Python execution profile
 ├── bin/                      # Build/run scripts
-├── data/                     # Data directory
-├── kb/                       # Knowledge base storage
-│   ├── search/               # Search indices
-│   │   ├── sparse_idx/       # Sparse search index
-│   │   └── graph_idx/        # Graph search index
-│   └── documents/            # Structured document storage
-├── logs/                     # Log directory
-├── sandbox/                  # Sandboxed execution space
-│   ├── bash/                 # Bash sandbox
-│   ├── python/               # Python sandbox
-│   ├── files/                # File operation sandbox
-│   └── browser/              # Web browser sandbox
-├── temp/                     # Temporary storage
-└── tests/                    # Test suites
+│   ├── 00-all-in-one.sh      # Complete setup script
+│   ├── 01-init.sh            # Project initialization
+│   ├── 02-build-container.sh # Container build script
+│   ├── 03-setup-environment.sh # Environment setup
+│   ├── 04-run-container.sh   # Container run script
+│   ├── 05-check-container.sh # Container health check
+│   ├── 06-run-tests.sh       # Test execution
+│   ├── 07-attach-container.sh # Container shell access
+│   ├── 08-testnetwork.sh     # Network testing
+│   ├── 09-view-logs.sh       # Log viewing
+│   ├── zy-shutdown.sh        # Container shutdown
+│   └── zz-teardown.sh        # Complete teardown
+├── tests/                    # Test suites
+│   ├── integration/          # Integration tests
+│   ├── unit/                 # Unit tests
+│   └── conftest.py           # Test configuration
+├── volume/                   # Persistent storage
+│   ├── config/               # Configuration files
+│   ├── data/                 # Data directory
+│   ├── kb/                   # Knowledge base storage
+│   │   ├── search/           # Search indices
+│   │   │   ├── sparse_idx/   # Sparse search index
+│   │   │   └── graph_idx/    # Graph search index
+│   │   ├── archive/          # Archived documents
+│   ├── logs/                 # Log files
+│   ├── sandbox/              # Sandboxed execution space
+│   │   ├── bash/             # Bash sandbox
+│   │   ├── browser/          # Web browser sandbox
+│   │   ├── files/            # File operation sandbox
+│   │   └── python/           # Python sandbox
+│   └── temp/                 # Temporary storage
+├── Containerfile            # Container definition
+├── podman-compose.yml       # Container orchestration
+├── pyproject.toml           # Python project configuration
+├── uv.lock                  # Dependency lock file
+├── pytest.ini               # Test configuration
+└── README.md                # Project documentation
 ```
 
 Each manager follows consistent design patterns:
