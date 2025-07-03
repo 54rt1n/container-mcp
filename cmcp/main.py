@@ -52,11 +52,13 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from cmcp.config import load_config
-from cmcp.managers.bash_manager import BashManager
-from cmcp.managers.python_manager import PythonManager
-from cmcp.managers.file_manager import FileManager
-from cmcp.managers.web_manager import WebManager
-from cmcp.managers.knowledge_base_manager import KnowledgeBaseManager
+from cmcp.managers import (
+    BashManager,
+    PythonManager,
+    FileManager,
+    WebManager,
+    KnowledgeBaseManagerV2 as KnowledgeBaseManager
+)
 from cmcp.utils.logging import setup_logging
 from cmcp.tools import register_all_tools
 

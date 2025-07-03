@@ -161,7 +161,7 @@ def web_manager(test_config):
 async def kb_manager(test_config):
     """Create a KnowledgeBaseManager instance for tests."""
     # Import here to avoid circular imports
-    from cmcp.managers.knowledge_base_manager import KnowledgeBaseManager
+    from cmcp.managers import KnowledgeBaseManagerV2 as KnowledgeBaseManager
     
     # Create manager
     manager = KnowledgeBaseManager.from_env(test_config)

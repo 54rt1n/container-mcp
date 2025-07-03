@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional, List, Tuple
 import time
 
 from mcp.server.fastmcp import FastMCP
-from cmcp.managers.knowledge_base_manager import KnowledgeBaseManager
+from cmcp.managers.knowledge_base_manager_v2 import KnowledgeBaseManagerV2 as KnowledgeBaseManager
 from cmcp.kb.path import PathComponents, PartialPathComponents
 from cmcp.kb.models import DocumentIndex, ImplicitRDFTriple
 
@@ -56,7 +56,8 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                       graph_expand_hops: int = 0,
                       filter_urns: Optional[List[str]] = None,
                       relation_predicates: Optional[List[str]] = None,
-                      top_k: int = 10,
+                      top_k_sparse: int = 50,
+                      top_k_rerank: int = 10,
                       include_content: bool = False,
                       include_index: bool = False,
                       use_reranker: bool = True) -> Dict[str, Any]:
@@ -68,7 +69,8 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
             graph_expand_hops: Number of hops to expand graph relationships (default 0).
             filter_urns: List of URNs to exclude from search results.
             relation_predicates: List of predicates to follow during graph traversal (default is "references").
-            top_k: Number of results to return (after reranking if enabled).
+            top_k_sparse: The number of candidates to retrieve from the initial sparse search (default 50).
+            top_k_rerank: The final number of results to return after reranking (default 10).
             include_content: Whether to include document content in results (default False).
             include_index: Whether to include document index/metadata in results (default False).
             use_reranker: Whether to use semantic reranking (default True).
@@ -77,9 +79,6 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
             Dictionary containing ranked list of document results.
         """
         try:
-            # Decide sparse k based on reranking needs - fetch more initially
-            top_k_sparse = max(50, top_k * 2) if use_reranker and query else top_k
-
             results = await kb_manager.search(
                 query=query,
                 graph_seed_urns=graph_seed_urns,
@@ -87,7 +86,7 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                 filter_urns=filter_urns,
                 relation_predicates=relation_predicates,
                 top_k_sparse=top_k_sparse,
-                top_k_rerank=top_k,  # Final desired K
+                top_k_rerank=top_k_rerank,
                 include_content=include_content,
                 include_index=include_index,
                 use_reranker=use_reranker
@@ -367,14 +366,14 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                                 predicate: str,
                                 object: Optional[str] = None,
                                 ref_path: Optional[str] = None) -> Dict[str, Any]:
-        """Manage RDF triples (preferences and references) for documents.
+        """Manage RDF triples (preferences, references, and metadata) for documents.
         
         Args:
             action: Action to perform ("add" or "remove")
-            triple_type: Type of triple ("preference" or "reference")
+            triple_type: Type of triple ("preference", "reference", or "metadata")
             path: Source document path
             predicate: Predicate of the triple
-            object: Object of the triple (for preferences) or relation name (for references)
+            object: Object of the triple (for preferences) or relation name (for references) or metadata value (for metadata)
             ref_path: Referenced document path (for references only)
             
         Returns:
@@ -391,12 +390,12 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                 }
             
             # Validate triple_type
-            if triple_type not in ["preference", "reference"]:
+            if triple_type not in ["preference", "reference", "metadata"]:
                 return {
                     "action": action,
                     "triple_type": triple_type,
                     "status": "error",
-                    "error": f"Invalid triple_type: {triple_type}. Must be 'preference' or 'reference'"
+                    "error": f"Invalid triple_type: {triple_type}. Must be 'preference', 'reference', or 'metadata'"
                 }
             
             # Parse the source path
@@ -455,6 +454,30 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                         relation=relation
                     )
             
+            # Handle metadata
+            elif triple_type == "metadata":
+                if action == "add":
+                    if object is None:
+                        return {
+                            "action": action,
+                            "triple_type": triple_type,
+                            "status": "error",
+                            "error": "object parameter is required for metadata add operations"
+                        }
+                    
+                    # Add metadata property using predicate as key and object as value
+                    result = await kb_manager.add_metadata_property(
+                        components=components,
+                        key=predicate,
+                        value=object
+                    )
+                else:  # remove
+                    # Remove metadata property using predicate as key
+                    result = await kb_manager.remove_metadata_property(
+                        components=components,
+                        key=predicate
+                    )
+            
             # Add action and triple_type to result for context
             result.update({
                 "action": action,
@@ -484,9 +507,15 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                                metadata: Dict[str, Any]) -> Dict[str, Any]:
         """Update metadata for a document in the knowledge base.
         
+        DEPRECATED: Use kb_update_triples with triple_type="metadata" instead.
+        This function updates the entire metadata dictionary. For individual
+        key-value operations, use kb_update_triples with:
+        - action="add", triple_type="metadata", predicate=key, object=value
+        - action="remove", triple_type="metadata", predicate=key
+        
         Args:
             path: Document path in format "namespace/collection[/subcollection]*/name"
-            metadata: Document metadata
+            metadata: Document metadata dictionary (replaces entire metadata)
             
         Returns:
             Dictionary with document location and status
@@ -501,7 +530,12 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                 metadata=metadata
             )
             
-            return index.model_dump()
+            result = index.model_dump()
+            result.update({
+                "status": "success",
+                "warning": "kb_update_metadata is deprecated. Use kb_update_triples with triple_type='metadata' for individual key-value operations."
+            })
+            return result
         except ValueError as e:
             return {
                 "status": "error",

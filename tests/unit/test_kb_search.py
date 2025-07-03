@@ -54,7 +54,9 @@ class TestKBSearch:
         mock_tantivy.SchemaBuilder.return_value = self.mock_schema_builder
         
         # Import the classes now that the mocks are in place
-        from cmcp.kb.search import SparseSearchIndex, GraphSearchIndex, Reranker
+        from cmcp.kb.search.sparse import SparseSearchIndex
+        from cmcp.kb.search.graph import GraphSearchIndex
+        from cmcp.kb.search.reranker import Reranker
         self.SparseSearchIndex = SparseSearchIndex
         self.GraphSearchIndex = GraphSearchIndex
         self.Reranker = Reranker

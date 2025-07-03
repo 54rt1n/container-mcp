@@ -11,7 +11,7 @@ import shutil
 from pathlib import Path
 from datetime import datetime, timezone
 
-from cmcp.managers.knowledge_base_manager import KnowledgeBaseManager
+from cmcp.managers import KnowledgeBaseManagerV2 as KnowledgeBaseManager
 from cmcp.kb.path import PathComponents, PartialPathComponents
 from cmcp.kb.models import DocumentIndex, ImplicitRDFTriple
 
