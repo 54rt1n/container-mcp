@@ -503,59 +503,6 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
             }
 
     @mcp.tool()
-    async def kb_update_metadata(path: str,
-                               metadata: Dict[str, Any]) -> Dict[str, Any]:
-        """Update metadata for a document in the knowledge base.
-        
-        DEPRECATED: Use kb_update_triples with triple_type="metadata" instead.
-        This function updates the entire metadata dictionary. For individual
-        key-value operations, use kb_update_triples with:
-        - action="add", triple_type="metadata", predicate=key, object=value
-        - action="remove", triple_type="metadata", predicate=key
-        
-        Args:
-            path: Document path in format "namespace/collection[/subcollection]*/name"
-            metadata: Document metadata dictionary (replaces entire metadata)
-            
-        Returns:
-            Dictionary with document location and status
-        """
-        try:
-            # Parse the path to get components
-            components = PathComponents.parse_path(path)
-            
-            # Update metadata with the components
-            index = await kb_manager.update_metadata(
-                components=components,
-                metadata=metadata
-            )
-            
-            result = index.model_dump()
-            result.update({
-                "status": "success",
-                "warning": "kb_update_metadata is deprecated. Use kb_update_triples with triple_type='metadata' for individual key-value operations."
-            })
-            return result
-        except ValueError as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-        except FileNotFoundError as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-        except Exception as e:
-            logger.error(f"Error updating metadata for {path}: {e}", exc_info=True, stack_info=True)
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-    
-
-
-    @mcp.tool()
     async def kb_manage(action: str, options: Dict[str, Any]) -> Dict[str, Any]:
         """Manage knowledge base operations like rebuilding search indices and moving documents.
         

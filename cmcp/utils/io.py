@@ -5,7 +5,7 @@ from cmcp.types.file import FileMetadata, FileEntry
 
 logger = logging.getLogger(__name__)
 
-async def read_file(path: str, max_file_size_mb: int = 100) -> tuple[str, FileMetadata]:
+async def read_file(path: str, max_file_size_mb: int = 100, encoding: str = "utf-8") -> tuple[str, FileMetadata]:
     """Read a file and return its content and metadata."""
     try:
         # Check file size
@@ -23,7 +23,7 @@ async def read_file(path: str, max_file_size_mb: int = 100) -> tuple[str, FileMe
         
         # Read the file
         logger.debug(f"Reading file: {path}")
-        async with aiofiles.open(path, 'r') as f:
+        async with aiofiles.open(path, 'r', encoding=encoding) as f:
             content = await f.read()
         
         return content, metadata
@@ -33,10 +33,10 @@ async def read_file(path: str, max_file_size_mb: int = 100) -> tuple[str, FileMe
         raise
         
         
-async def write_file(path: str, content: str) -> bool:
+async def write_file(path: str, content: str, encoding: str = "utf-8") -> bool:
     """Write content to a file."""
     try:
-        async with aiofiles.open(path, 'w') as f:
+        async with aiofiles.open(path, 'w', encoding=encoding) as f:
             await f.write(content)
         return True
     except Exception as e:

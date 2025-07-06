@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional
 import logging
 from mcp.server.fastmcp import FastMCP
 from cmcp.managers.file_manager import FileManager, FileMetadata
+from cmcp.utils.diff import DiffFormat
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ def create_file_tools(mcp: FastMCP, file_manager: FileManager) -> None:
         file_manager: The file manager instance
     """
     @mcp.tool()
-    async def file_read(path: str, encoding: str = "utf-8") -> Dict[str, Any]:
+    async def fs_read(path: str, encoding: str = "utf-8") -> Dict[str, Any]:
         """Read file contents safely.
         
         Args:
@@ -50,7 +51,7 @@ def create_file_tools(mcp: FastMCP, file_manager: FileManager) -> None:
             }
     
     @mcp.tool()
-    async def file_write(path: str, content: str, encoding: str = "utf-8") -> Dict[str, Any]:
+    async def fs_write(path: str, content: str, encoding: str = "utf-8") -> Dict[str, Any]:
         """Write content to a file safely.
         
         Args:
@@ -77,7 +78,7 @@ def create_file_tools(mcp: FastMCP, file_manager: FileManager) -> None:
             }
     
     @mcp.tool()
-    async def file_list(path: str = "/", pattern: Optional[str] = None, recursive: bool = True) -> Dict[str, Any]:
+    async def fs_list(path: str = "/", pattern: Optional[str] = None, recursive: bool = True) -> Dict[str, Any]:
         """List contents of a directory safely.
         
         Args:
@@ -112,7 +113,7 @@ def create_file_tools(mcp: FastMCP, file_manager: FileManager) -> None:
             }
     
     @mcp.tool()
-    async def file_delete(path: str) -> Dict[str, Any]:
+    async def fs_delete(path: str) -> Dict[str, Any]:
         """Delete a file safely.
         
         Args:
@@ -137,7 +138,7 @@ def create_file_tools(mcp: FastMCP, file_manager: FileManager) -> None:
             }
     
     @mcp.tool()
-    async def file_move(source: str, destination: str) -> Dict[str, Any]:
+    async def fs_move(source: str, destination: str) -> Dict[str, Any]:
         """Move or rename a file safely.
         
         Args:
@@ -164,8 +165,32 @@ def create_file_tools(mcp: FastMCP, file_manager: FileManager) -> None:
                 "error": str(e)
             }
     
+    @mcp.tool()
+    async def fs_apply_diff(path: str, diff_content: str) -> Dict[str, Any]:
+        """Apply a unified diff to a file safely.
+        
+        Args:
+            path: Path to the file (relative to sandbox root)
+            diff_content: Unified diff content to apply
+            
+        Returns:
+            Dictionary containing success status, lines applied, and metadata
+        """
+        try:
+            result = await file_manager.apply_diff_to_file(path, diff_content)
+            return result
+        except Exception as e:
+            logger.warning(f"Error applying diff to file {path}: {str(e)}")
+            return {
+                "success": False,
+                "path": path,
+                "lines_applied": 0,
+                "new_size": 0,
+                "error": str(e)
+            }
+    
     # Register file resource handler
-    @mcp.resource("file://{path}")
+    @mcp.resource("fs://{path}")
     async def get_file(path: str) -> str:
         """Get file contents as a resource.
         

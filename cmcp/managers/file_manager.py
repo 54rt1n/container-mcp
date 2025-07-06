@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Tuple, Optional
 from cmcp.types.file import FileMetadata
 from cmcp.utils.logging import get_logger
 from cmcp.utils.io import read_file, write_file
+from cmcp.utils.diff import generate_diff, apply_unified_diff, split_patch_into_files, analyze_diff, DiffFormat
 
 logger = get_logger(__name__)
 
@@ -110,7 +111,7 @@ class FileManager:
             logger.warning(f"File extension not allowed: {ext}")
             raise ValueError(f"File extension not allowed: {ext}")
     
-    async def read_file(self, path: str) -> Tuple[str, FileMetadata]:
+    async def read_file(self, path: str, encoding: str = "utf-8") -> Tuple[str, FileMetadata]:
         """Read a file's contents safely.
         
         Args:
@@ -141,11 +142,11 @@ class FileManager:
         self._validate_extension(path)
         
         # Read the file
-        content, metadata = await read_file(full_path, self.max_file_size_mb)
+        content, metadata = await read_file(full_path, self.max_file_size_mb, encoding)
         
         return content, metadata
     
-    async def write_file(self, path: str, content: str) -> bool:
+    async def write_file(self, path: str, content: str, encoding: str = "utf-8") -> bool:
         """Write content to a file safely.
         
         Args:
@@ -175,7 +176,7 @@ class FileManager:
         
         # Write the file
         logger.debug(f"Writing file: {path}")
-        await write_file(full_path, content)
+        await write_file(full_path, content, encoding=encoding)
         
         return True
     
@@ -332,4 +333,141 @@ class FileManager:
         logger.debug(f"Moving file from {source} to {destination}")
         os.rename(source_path, dest_path)
         
-        return True 
+        return True
+    
+    async def apply_diff_to_file(self, path: str, diff_content: str) -> Dict[str, Any]:
+        """Apply a unified diff to a file safely.
+        
+        Args:
+            path: Path to the file (relative to base_dir)
+            diff_content: Unified diff content to apply
+            
+        Returns:
+            Dictionary with success status, lines applied, and any errors
+            
+        Raises:
+            FileNotFoundError: If file doesn't exist
+            ValueError: If diff cannot be applied or extension not allowed
+        """
+        # Validate the path
+        full_path = self._validate_path(path)
+        
+        # Check if file exists
+        if not os.path.exists(full_path):
+            logger.warning(f"File not found: {path}")
+            raise FileNotFoundError(f"File not found: {path}")
+        
+        # Validate the file is not a directory
+        if os.path.isdir(full_path):
+            logger.warning(f"Path is a directory: {path}")
+            raise IsADirectoryError(f"Path is a directory: {path}")
+        
+        # Validate extension
+        self._validate_extension(path)
+        
+        try:
+            # Read the original file
+            original_content, _ = await self.read_file(path)
+            
+            # Apply the diff
+            logger.debug(f"Applying diff to file: {path}")
+            new_content, lines_applied = apply_unified_diff(original_content, diff_content)
+            
+            # Check if the new content size is within limits
+            content_size = len(new_content.encode('utf-8'))
+            if content_size > self.max_file_size_mb * 1024 * 1024:
+                logger.warning(f"Diff would result in content too large: {content_size} bytes")
+                raise ValueError(f"Diff would result in content too large: {content_size} bytes (maximum {self.max_file_size_mb} MB)")
+            
+            # Write the modified content
+            await self.write_file(path, new_content)
+            
+            logger.info(f"Applied diff to {path}: {lines_applied} lines changed")
+            return {
+                "success": True,
+                "path": path,
+                "lines_applied": lines_applied,
+                "new_size": content_size,
+                "error": None
+            }
+            
+        except Exception as e:
+            logger.error(f"Error applying diff to {path}: {str(e)}")
+            return {
+                "success": False,
+                "path": path,
+                "lines_applied": 0,
+                "new_size": 0,
+                "error": str(e)
+            }
+    
+    async def generate_file_diff(
+        self, 
+        path: str, 
+        new_content: str, 
+        diff_format: DiffFormat = DiffFormat.UNIFIED,
+        context_lines: int = 3
+    ) -> Dict[str, Any]:
+        """Generate a diff between current file content and new content.
+        
+        Args:
+            path: Path to the file (relative to base_dir)
+            new_content: New content to compare against
+            diff_format: Format of the diff to generate
+            context_lines: Number of context lines for unified/context diffs
+            
+        Returns:
+            Dictionary with diff content, stats, and metadata
+            
+        Raises:
+            FileNotFoundError: If file doesn't exist
+            ValueError: If extension not allowed
+        """
+        try:
+            # Read the original file
+            original_content, metadata = await self.read_file(path)
+            
+            # Generate the diff
+            logger.debug(f"Generating diff for file: {path}")
+            diff_content, stats = generate_diff(
+                original_content,
+                new_content,
+                diff_format=diff_format,
+                context_lines=context_lines,
+                from_file=f"a/{path}",
+                to_file=f"b/{path}"
+            )
+            
+            # Analyze the diff
+            analysis = analyze_diff(diff_content)
+            
+            return {
+                "success": True,
+                "path": path,
+                "diff_content": diff_content,
+                "stats": {
+                    "lines_added": stats.lines_added,
+                    "lines_removed": stats.lines_removed,
+                    "lines_modified": stats.lines_modified,
+                    "net_change": stats.net_change,
+                    "hunks": stats.hunks
+                },
+                "analysis": analysis,
+                "original_size": metadata.size,
+                "new_size": len(new_content.encode('utf-8')),
+                "error": None
+            }
+            
+        except Exception as e:
+            logger.error(f"Error generating diff for {path}: {str(e)}")
+            return {
+                "success": False,
+                "path": path,
+                "diff_content": "",
+                "stats": {},
+                "analysis": {},
+                "original_size": 0,
+                "new_size": 0,
+                "error": str(e)
+            }
+    
