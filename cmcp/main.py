@@ -57,7 +57,7 @@ from cmcp.managers import (
     PythonManager,
     FileManager,
     WebManager,
-    KnowledgeBaseManagerV2 as KnowledgeBaseManager,
+    KnowledgeBaseManager,
     ListManager
 )
 from cmcp.utils.logging import setup_logging

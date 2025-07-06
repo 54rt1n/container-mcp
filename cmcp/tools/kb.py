@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional, List, Tuple
 import time
 
 from mcp.server.fastmcp import FastMCP
-from cmcp.managers.knowledge_base_manager_v2 import KnowledgeBaseManagerV2 as KnowledgeBaseManager
+from cmcp.managers.knowledge_base_manager import KnowledgeBaseManager
 from cmcp.kb.path import PathComponents, PartialPathComponents
 from cmcp.kb.models import DocumentIndex, ImplicitRDFTriple
 

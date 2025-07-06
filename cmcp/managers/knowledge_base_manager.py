@@ -1,4 +1,4 @@
-# cmcp/managers/knowledge_base_manager_v2.py
+# cmcp/managers/knowledge_base_manager.py
 
 """
 A refactored version of the knowledge base manager for CMCP.
@@ -7,10 +7,8 @@ resulting in a cleaner, more maintainable, and focused class.
 """
 
 import os
-import asyncio
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
-import logging
 
 from cmcp.kb.document_store import DocumentStore
 from cmcp.kb.models import DocumentIndex, ImplicitRDFTriple
@@ -31,7 +29,7 @@ from cmcp.kb.search import (
 logger = get_logger(__name__)
 
 
-class KnowledgeBaseManagerV2:
+class KnowledgeBaseManager:
     """
     Manages the knowledge base, focusing on document and metadata operations.
     All search functionality is delegated to the SearchService.
@@ -65,11 +63,11 @@ class KnowledgeBaseManagerV2:
         # The single point of contact for all search operations
         self.search_service: Optional[SearchService] = None
         
-        logger.debug("Refactored KnowledgeBaseManager (V2) initialized.")
+        logger.debug("KnowledgeBaseManager initialized.")
     
     @classmethod
-    def from_env(cls, config: Optional[AppConfig] = None) -> 'KnowledgeBaseManagerV2':
-        """Create a KnowledgeBaseManagerV2 instance from configuration."""
+    def from_env(cls, config: Optional[AppConfig] = None) -> 'KnowledgeBaseManager':
+        """Create a KnowledgeBaseManager instance from configuration."""
         if config is None:
             from cmcp.config import load_config
             config = load_config()
@@ -89,7 +87,7 @@ class KnowledgeBaseManagerV2:
     def check_initialized(self) -> None:
         """Check if the knowledge base manager is initialized."""
         if self.document_store is None:
-            raise RuntimeError("KnowledgeBaseManagerV2 not initialized. Call initialize() first.")
+            raise RuntimeError("KnowledgeBaseManager not initialized. Call initialize() first.")
     
     async def initialize(self) -> None:
         """Initialize the document store and the search service."""

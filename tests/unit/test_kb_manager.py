@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, AsyncMock, patch, ANY
 from datetime import datetime, timezone
 import cmcp.kb.search  # Import the cmcp module
 
-from cmcp.managers import KnowledgeBaseManagerV2
+from cmcp.managers import KnowledgeBaseManager
 from cmcp.kb.models import DocumentIndex, ImplicitRDFTriple, DocumentFragment
 from cmcp.kb.path import PathComponents, PartialPathComponents
 from cmcp.kb.search import (
@@ -69,14 +69,14 @@ def test_config_search_disabled(test_config):
 
 @pytest.fixture
 async def kb_manager(tmpdir):
-    """Fixture for a fully initialized KnowledgeBaseManagerV2 with mocked dependencies."""
+    """Fixture for a fully initialized KnowledgeBaseManager with mocked dependencies."""
     kb_path = str(tmpdir.mkdir("kb"))
 
     # We patch the classes within the module where they are *used*.
-    with patch('cmcp.managers.knowledge_base_manager_v2.DocumentStore', new_callable=MagicMock) as MockDocStore:
+    with patch('cmcp.managers.knowledge_base_manager.DocumentStore', new_callable=MagicMock) as MockDocStore:
 
         # Manually instantiate the manager, bypassing its real initialize() method in tests
-        manager = KnowledgeBaseManagerV2(
+        manager = KnowledgeBaseManager(
             storage_path=kb_path,
             timeout_default=30,
             timeout_max=300,
@@ -98,10 +98,10 @@ async def kb_manager(tmpdir):
 @pytest.fixture
 async def kb_manager_search_disabled(test_config_search_disabled):
     """Fixture for KB Manager with search disabled."""
-    with patch('cmcp.managers.knowledge_base_manager_v2.DocumentStore') as MockDocStore, \
+    with patch('cmcp.managers.knowledge_base_manager.DocumentStore') as MockDocStore, \
          patch('os.makedirs'):
         
-        manager = KnowledgeBaseManagerV2.from_env(test_config_search_disabled)
+        manager = KnowledgeBaseManager.from_env(test_config_search_disabled)
         await manager.initialize()
         manager.document_store = MockDocStore.return_value
         yield manager
@@ -552,15 +552,6 @@ async def test_search_contract():
     with pytest.raises(ValueError, match="Search requires either a query or graph_seed_urns"):
         await mock_manager.search()
 
-# --- Test Sync Helpers with Error Handling ---
-
-# NOTE: These tests are no longer relevant as the sync helper methods
-# have been moved to the SearchIndexManager and are not part of the
-# KnowledgeBaseManagerV2's public or private API.
-# The responsibility of testing these now lies with the tests for SearchIndexManager.
-# I am removing them to align with the refactored design.
-
-
 # --- Test Missing Methods ---
 
 @pytest.mark.asyncio
@@ -872,7 +863,7 @@ async def test_from_env():
         mock_load_config.return_value = mock_config
         
         # Call the method
-        manager = KnowledgeBaseManagerV2.from_env()
+        manager = KnowledgeBaseManager.from_env()
         
         # Verify configuration was used
         assert manager.storage_path == "/test/path"
@@ -885,12 +876,12 @@ async def test_from_env():
 async def test_initialize():
     """Test initializing the knowledge base manager."""
     with patch('os.makedirs'), \
-         patch('cmcp.managers.knowledge_base_manager_v2.DocumentStore'), \
-         patch('cmcp.managers.knowledge_base_manager_v2.SearchService'), \
+         patch('cmcp.managers.knowledge_base_manager.DocumentStore'), \
+         patch('cmcp.managers.knowledge_base_manager.SearchService'), \
          patch('os.path.exists', return_value=True):
 
         # Create manager with search enabled
-        manager = KnowledgeBaseManagerV2(
+        manager = KnowledgeBaseManager(
             storage_path="/test/path",
             timeout_default=30,
             timeout_max=300,
@@ -1034,11 +1025,11 @@ async def test_add_reference_contract():
 @pytest.mark.asyncio
 async def test_remove_reference_contract():
     """Test that remove_reference contract is maintained."""
-    from cmcp.managers.knowledge_base_manager_v2 import KnowledgeBaseManagerV2
+    from cmcp.managers.knowledge_base_manager import KnowledgeBaseManager
     import inspect
     
     # Get the signature of the method
-    sig = inspect.signature(KnowledgeBaseManagerV2.remove_reference)
+    sig = inspect.signature(KnowledgeBaseManager.remove_reference)
     params = list(sig.parameters.keys())
     
     # Contract for remove_reference: self, components, ref_components, relation
@@ -1202,11 +1193,11 @@ async def test_remove_metadata_property_not_found(kb_manager, sample_components)
 @pytest.mark.asyncio
 async def test_add_metadata_property_contract():
     """Test that add_metadata_property contract is maintained."""
-    from cmcp.managers.knowledge_base_manager_v2 import KnowledgeBaseManagerV2
+    from cmcp.managers.knowledge_base_manager import KnowledgeBaseManager
     import inspect
     
     # Get the signature of the method
-    sig = inspect.signature(KnowledgeBaseManagerV2.add_metadata_property)
+    sig = inspect.signature(KnowledgeBaseManager.add_metadata_property)
     params = list(sig.parameters.keys())
     
     # Contract for add_metadata_property: self, components, key, value
@@ -1238,11 +1229,11 @@ async def test_add_metadata_property_contract():
 @pytest.mark.asyncio
 async def test_remove_metadata_property_contract():
     """Test that remove_metadata_property contract is maintained."""
-    from cmcp.managers.knowledge_base_manager_v2 import KnowledgeBaseManagerV2
+    from cmcp.managers.knowledge_base_manager import KnowledgeBaseManager
     import inspect
     
     # Get the signature of the method
-    sig = inspect.signature(KnowledgeBaseManagerV2.remove_metadata_property)
+    sig = inspect.signature(KnowledgeBaseManager.remove_metadata_property)
     params = list(sig.parameters.keys())
     
     # Contract for remove_metadata_property: self, components, key
