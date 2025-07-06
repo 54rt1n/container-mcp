@@ -12,10 +12,11 @@ from .system import create_system_tools
 from .file import create_file_tools
 from .web import create_web_tools
 from .kb import create_kb_tools
+from .list import create_list_tools
 
 logger = logging.getLogger(__name__)
 
-def register_all_tools(mcp, config, bash_manager, python_manager, file_manager, web_manager, kb_manager):
+def register_all_tools(mcp, config, bash_manager, python_manager, file_manager, web_manager, kb_manager, list_manager):
     """Register tools with the MCP instance based on configuration.
     
     Args:
@@ -26,6 +27,7 @@ def register_all_tools(mcp, config, bash_manager, python_manager, file_manager, 
         file_manager: The file manager instance
         web_manager: The web manager instance
         kb_manager: The knowledge base manager instance
+        list_manager: The list manager instance
     """
     logger.info("Registering tools based on configuration...")
     
@@ -56,5 +58,12 @@ def register_all_tools(mcp, config, bash_manager, python_manager, file_manager, 
         logger.info("Knowledge Base tools ENABLED.")
     else:
         logger.warning("Knowledge Base tools DISABLED by configuration.")
+    
+    # List Tools
+    if config.tools_enable_list:
+        create_list_tools(mcp, list_manager)
+        logger.info("List tools ENABLED.")
+    else:
+        logger.warning("List tools DISABLED by configuration.")
     
     logger.info("Tool registration complete.") 

@@ -57,7 +57,8 @@ from cmcp.managers import (
     PythonManager,
     FileManager,
     WebManager,
-    KnowledgeBaseManagerV2 as KnowledgeBaseManager
+    KnowledgeBaseManagerV2 as KnowledgeBaseManager,
+    ListManager
 )
 from cmcp.utils.logging import setup_logging
 from cmcp.tools import register_all_tools
@@ -101,6 +102,7 @@ python_manager = PythonManager.from_env(config)
 file_manager = FileManager.from_env(config)
 web_manager = WebManager.from_env(config)
 kb_manager = KnowledgeBaseManager.from_env(config)
+list_manager = ListManager.from_env(config)
 
 # Set up logging
 log_file = os.path.join("logs", "cmcp.log") if os.path.exists("logs") else None
@@ -165,7 +167,8 @@ register_all_tools(
     python_manager,
     file_manager,
     web_manager,
-    kb_manager
+    kb_manager,
+    list_manager
 )
 
 if __name__ == "__main__":

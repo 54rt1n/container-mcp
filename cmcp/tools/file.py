@@ -1,3 +1,5 @@
+# cmcp/tools/file.py
+# container-mcp © 2025 by Martin Bukowski is licensed under Apache 2.0
 """File tools module.
 
 This module contains tools for file operations like reading, writing, and managing files.

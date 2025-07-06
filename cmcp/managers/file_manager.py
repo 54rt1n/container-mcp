@@ -5,21 +5,13 @@
 
 import os
 import aiofiles
-from dataclasses import dataclass
 from typing import List, Dict, Any, Tuple, Optional
 
+from cmcp.types.file import FileMetadata
 from cmcp.utils.logging import get_logger
+from cmcp.utils.io import read_file, write_file
 
 logger = get_logger(__name__)
-
-
-@dataclass
-class FileMetadata:
-    """Metadata about a file."""
-    
-    size: int
-    modified_time: float
-    is_directory: bool
 
 
 class FileManager:
@@ -148,23 +140,8 @@ class FileManager:
         # Validate extension
         self._validate_extension(path)
         
-        # Check file size
-        file_size = os.path.getsize(full_path)
-        if file_size > self.max_file_size_mb * 1024 * 1024:
-            logger.warning(f"File too large: {file_size} bytes")
-            raise ValueError(f"File too large: {file_size} bytes (maximum {self.max_file_size_mb} MB)")
-        
-        # Create metadata
-        metadata = FileMetadata(
-            size=file_size,
-            modified_time=os.path.getmtime(full_path),
-            is_directory=False
-        )
-        
         # Read the file
-        logger.debug(f"Reading file: {path}")
-        async with aiofiles.open(full_path, 'r') as f:
-            content = await f.read()
+        content, metadata = await read_file(full_path, self.max_file_size_mb)
         
         return content, metadata
     
@@ -198,8 +175,7 @@ class FileManager:
         
         # Write the file
         logger.debug(f"Writing file: {path}")
-        async with aiofiles.open(full_path, 'w') as f:
-            await f.write(content)
+        await write_file(full_path, content)
         
         return True
     
