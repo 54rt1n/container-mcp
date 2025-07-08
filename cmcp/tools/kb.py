@@ -25,19 +25,19 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
     """
 
     # Register knowledge base document resource handler
-    @mcp.resource("kb://{path}")
-    async def get_kb_document(path: str) -> str:
+    @mcp.resource("kb://{uri}")
+    async def get_kb_document(uri: str) -> str:
         """Get knowledge base document contents as a resource.
         
         Args:
-            path: Document path
+            uri: Document URI
             
         Returns:
             Document content as string
         """
         try:
             # Parse the path
-            components = PathComponents.parse_path(f"kb://{path}")
+            components = PathComponents.parse_path(f"kb://{uri}")
             
             # Read the document using components
             document = await kb_manager.read_content(components)
@@ -61,22 +61,19 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                       include_content: bool = False,
                       include_index: bool = False,
                       use_reranker: bool = True) -> Dict[str, Any]:
-        """Search the knowledge base using text query and/or graph expansion.
+        """Search the knowledge base using text queries and graph relationships.
 
-        Args:
-            query: Text query for sparse search and reranking.
-            graph_seed_urns: List of starting URNs for graph expansion/filtering.
-            graph_expand_hops: Number of hops to expand graph relationships (default 0).
-            filter_urns: List of URNs to exclude from search results.
-            relation_predicates: List of predicates to follow during graph traversal (default is "references").
-            top_k_sparse: The number of candidates to retrieve from the initial sparse search (default 50).
-            top_k_rerank: The final number of results to return after reranking (default 10).
-            include_content: Whether to include document content in results (default False).
-            include_index: Whether to include document index/metadata in results (default False).
-            use_reranker: Whether to use semantic reranking (default True).
+        This tool searches through documents in the knowledge base using both text matching
+        and graph relationship traversal. You can search by content, follow document references,
+        or combine both approaches for comprehensive knowledge discovery.
 
-        Returns:
-            Dictionary containing ranked list of document results.
+        Examples:
+        
+        Request: {"name": "kb_search", "parameters": {"query": "machine learning algorithms", "top_k_rerank": 5}}
+        Response: {"results": [{"uri": "kb://ai/ml/algorithms", "score": 0.95, "title": "ML Algorithms Overview"}], "count": 5}
+        
+        Request: {"name": "kb_search", "parameters": {"graph_seed_uris": ["kb://project/docs/main"], "graph_expand_hops": 2, "include_content": true}}
+        Response: {"results": [{"uri": "kb://project/docs/api", "content": "API documentation...", "relations": ["references"]}], "count": 8}
         """
         try:
             results = await kb_manager.search(
@@ -101,24 +98,23 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
             return {"status": "error", "error": f"An unexpected error occurred: {str(e)}"}
 
     @mcp.tool()
-    async def kb_read(path: Optional[str] = None,
+    async def kb_read(uri: Optional[str] = None,
                      recursive: bool = True,
                      include_content: bool = False,
                      include_index: bool = False) -> Dict[str, Any]:
-        """Read from the knowledge base - either list documents or read specific document data.
+        """Read documents or browse collections in the knowledge base.
         
-        This function intelligently handles both listing and reading based on the path:
-        - If path is None, partial, or points to a namespace/collection: lists documents
-        - If path points to a specific document: reads document content/metadata
+        This tool can list all documents in the knowledge base, browse specific collections,
+        or read individual documents with their content and metadata. Use without a path 
+        to see all available documents, or provide a specific document path to read it.
         
-        Args:
-            path: Document/collection path. None lists all documents.
-            recursive: Whether to list recursively (for listing mode)
-            include_content: Whether to include document content (for reading mode)
-            include_index: Whether to include document metadata (for reading mode)
-            
-        Returns:
-            Dictionary with either document list or document data
+        Examples:
+        
+        Request: {"name": "kb_read", "parameters": {}}
+        Response: {"documents": ["kb://notes/meeting-2024-01", "kb://docs/api-spec"], "count": 2, "mode": "list"}
+        
+        Request: {"name": "kb_read", "parameters": {"uri": "kb://notes/meeting-2024-01", "include_content": true, "include_index": true}}
+        Response: {"status": "success", "uri": "kb://notes/meeting-2024-01", "content": "Meeting notes...", "index": {"title": "Team Meeting", "created": "2024-01-01"}}
         """
         async def _process_document_list(documents, include_content, include_index):
             """Helper to process a list of documents and optionally include their content/index."""
@@ -171,14 +167,14 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
         
         try:
             # If no path provided, list all documents
-            if not path:
+            if not uri:
                 documents = await kb_manager.list_documents(recursive=recursive)
                 return await _process_document_list(documents, include_content, include_index)
             
             # Parse the path to determine what we're dealing with
             try:
                 # Try to parse as a complete document path first
-                components = PathComponents.parse_path(path)
+                components = PathComponents.parse_path(uri)
                 
                 # Check if this document actually exists
                 if await kb_manager.check_index(components):
@@ -190,7 +186,7 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                     
                     result = {
                         "status": "success",
-                        "path": path,
+                        "uri": uri,
                         "mode": "read"
                     }
                     
@@ -225,7 +221,7 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                     return result
                 else:
                     # Document doesn't exist, treat as partial path for listing
-                    partial_components = PartialPathComponents.parse_path(path)
+                    partial_components = PartialPathComponents.parse_path(uri)
                     documents = await kb_manager.list_documents(
                         components=partial_components,
                         recursive=recursive
@@ -234,7 +230,7 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                     
             except ValueError:
                 # Path couldn't be parsed as complete document path, treat as partial
-                partial_components = PartialPathComponents.parse_path(path)
+                partial_components = PartialPathComponents.parse_path(uri)
                 documents = await kb_manager.list_documents(
                     components=partial_components,
                     recursive=recursive
@@ -254,24 +250,26 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
             }
     
     @mcp.tool()
-    async def kb_create_document(path: str,
-                              metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Create a new document in the knowledge base (metadata only, no content).
+    async def kb_create_document(uri: str,
+                              metadata: Optional[Dict[str, Any]] = None,
+                              content: Optional[str] = None) -> Dict[str, Any]:
+        """Create a new document structure in the knowledge base with metadata.
         
-        Note: This is a two-step process. First create the document with metadata using this function,
-        then add content using kb_write_content. This approach prevents wasting tokens if document
-        creation fails (e.g., if the document already exists or the path is invalid).
+        This tool creates the document structure and index with metadata but no content yet.
+        After creating the document, use kb_write_content to add the actual content.
+        This two-step approach ensures the document path is valid before adding content.
         
-        Args:
-            path: Document path in format "namespace/collection[/subcollection]*/name"
-            metadata: Optional document metadata (default: {})
-            
-        Returns:
-            Dictionary with document index
+        Examples:
+        
+        Request: {"name": "kb_create_document", "parameters": {"uri": "kb://project/docs/api-guide", "metadata": {"title": "API Guide", "author": "dev-team"}}}
+        Response: {"urn": "kb://project/docs/api-guide", "title": "API Guide", "author": "dev-team", "created": "2024-01-01T10:00:00Z"}
+        
+        Request: {"name": "kb_create_document", "parameters": {"uri": "kb://notes/weekly-standup-2024-01-15"}}
+        Response: {"urn": "kb://notes/weekly-standup-2024-01-15", "created": "2024-01-15T10:00:00Z", "title": "weekly-standup-2024-01-15"}
         """
         try:
             # Parse the path to get components
-            components = PathComponents.parse_path(path)
+            components = PathComponents.parse_path(uri)
             
             # Use default empty metadata if not provided
             if metadata is None:
@@ -282,6 +280,12 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                 components=components,
                 metadata=metadata
             )
+
+            if content:
+                index = await kb_manager.write_content(
+                    components=components,
+                    content=content
+                )
             
             return index.model_dump()
         except ValueError as e:
@@ -290,39 +294,39 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                 "error": str(e)
             }
         except Exception as e:
-            logger.error(f"Error creating document at {path}: {e}", exc_info=True, stack_info=True)
+            logger.error(f"Error creating document at {uri}: {e}")
             return {
                 "status": "error",
                 "error": str(e)
             }
     
     @mcp.tool()
-    async def kb_write_content(path: str,
+    async def kb_write_content(uri: str,
                              content: str,
                              force: bool = False) -> Dict[str, Any]:
-        """Write content to an existing document in the knowledge base.
+        """Add content to an existing document in the knowledge base.
         
-        Note: This is part of a two-step process. First create the document with metadata using
-        kb_create_document, then add content using this function. This approach prevents wasting 
-        tokens if document creation fails.
+        This tool writes the actual content to a document that was previously created with
+        kb_create_document. The document structure must already exist before adding content.
+        Use force=true to overwrite existing content if needed.
         
-        Args:
-            path: Document path in format "namespace/collection[/subcollection]*/name"
-            content: Document content
-            force: Whether to overwrite existing content if it exists
-            
-        Returns:
-            Dictionary with document location and status
+        Examples:
+        
+        Request: {"name": "kb_write_content", "parameters": {"uri": "kb://project/docs/api-guide", "content": "# API Guide\\n\\nThis guide covers..."}}
+        Response: {"urn": "kb://project/docs/api-guide", "content_size": 1024, "updated": "2024-01-01T10:30:00Z"}
+        
+        Request: {"name": "kb_write_content", "parameters": {"uri": "kb://notes/meeting-notes", "content": "Updated meeting notes...", "force": true}}
+        Response: {"urn": "kb://notes/meeting-notes", "content_size": 512, "updated": "2024-01-01T11:00:00Z", "overwritten": true}
         """
         try:
             # Parse the path to get components
-            components = PathComponents.parse_path(path)
+            components = PathComponents.parse_path(uri)
             
             # Check if document exists (index must exist)
             if not await kb_manager.check_index(components):
                 return {
                     "status": "error",
-                    "error": f"Document not found: {path}. Create it first using kb_create_document."
+                    "error": f"Document not found: {uri}. Create it first using kb_create_document."
                 }
             
             # Check if content already exists using the check_content method
@@ -351,7 +355,7 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                 "error": str(e)
             }
         except Exception as e:
-            logger.error(f"Error writing content to {path}: {e}", exc_info=True, stack_info=True)
+            logger.error(f"Error writing content to {uri}: {e}")
             return {
                 "status": "error",
                 "error": str(e)
@@ -362,22 +366,23 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
     @mcp.tool()
     async def kb_update_triples(action: str,
                                 triple_type: str,
-                                path: str,
+                                uri: str,
                                 predicate: str,
                                 object: Optional[str] = None,
-                                ref_path: Optional[str] = None) -> Dict[str, Any]:
-        """Manage RDF triples (preferences, references, and metadata) for documents.
+                                ref_uri: Optional[str] = None) -> Dict[str, Any]:
+        """Manage relationships and metadata between documents in the knowledge base.
         
-        Args:
-            action: Action to perform ("add" or "remove")
-            triple_type: Type of triple ("preference", "reference", or "metadata")
-            path: Source document path
-            predicate: Predicate of the triple
-            object: Object of the triple (for preferences) or relation name (for references) or metadata value (for metadata)
-            ref_path: Referenced document path (for references only)
-            
-        Returns:
-            Dictionary with status and operation results
+        This tool adds or removes semantic relationships (references), preferences, 
+        and metadata properties for documents. Use it to create connections between 
+        related documents or add structured metadata.
+        
+        Examples:
+        
+        Request: {"name": "kb_update_triples", "parameters": {"action": "add", "triple_type": "reference", "uri": "kb://docs/api", "predicate": "references", "ref_uri": "kb://examples/code-samples"}}
+        Response: {"action": "add", "triple_type": "reference", "status": "success", "relations_count": 3}
+        
+        Request: {"name": "kb_update_triples", "parameters": {"action": "add", "triple_type": "metadata", "uri": "kb://docs/guide", "predicate": "priority", "object": "high"}}
+        Response: {"action": "add", "triple_type": "metadata", "status": "success", "metadata_updated": {"priority": "high"}}
         """
         try:
             # Validate action
@@ -399,7 +404,7 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                 }
             
             # Parse the source path
-            components = PathComponents.parse_path(path)
+            components = PathComponents.parse_path(uri)
             
             # Handle preferences
             if triple_type == "preference":
@@ -427,7 +432,7 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
             
             # Handle references
             elif triple_type == "reference":
-                if ref_path is None:
+                if ref_uri is None:
                     return {
                         "action": action,
                         "triple_type": triple_type,
@@ -436,7 +441,7 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                     }
                 
                 # Parse the referenced path
-                ref_components = PathComponents.parse_path(ref_path)
+                ref_components = PathComponents.parse_path(ref_uri)
                 
                 # Use predicate as the relation name for references
                 relation = predicate
@@ -504,28 +509,19 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
 
     @mcp.tool()
     async def kb_manage(action: str, options: Dict[str, Any]) -> Dict[str, Any]:
-        """Manage knowledge base operations like rebuilding search indices and moving documents.
+        """Perform administrative operations on the knowledge base.
         
-        Args:
-            action: Management action to perform. Supported actions:
-                   - "rebuild_search_index": Rebuild search indices from scratch
-                     optional parameters: rebuild_all (bool, default: True)
-                   - "move_document": Move a document to a new location
-                     required parameters: path (str, required), new_path (str, required)
-                   - "delete": Archive a document
-                     required parameters: path (str, required)
-            options: Additional parameters for the specific action
-
-            Example:
-            {
-                "action": "rebuild_search_index",
-                "options": {
-                    "rebuild_all": True
-                }
-            }
-            
-        Returns:
-            Dictionary with operation status and results
+        This tool handles maintenance tasks like rebuilding search indices, moving documents
+        to new locations, and archiving documents. Use for knowledge base administration
+        and organization tasks.
+        
+        Examples:
+        
+        Request: {"name": "kb_manage", "parameters": {"action": "rebuild_search_index", "options": {"rebuild_all": true}}}
+        Response: {"action": "rebuild_search_index", "status": "success", "result": {"documents_indexed": 150, "time_taken": "2.3s"}}
+        
+        Request: {"name": "kb_manage", "parameters": {"action": "move_document", "options": {"uri": "kb://temp/draft", "new_uri": "kb://docs/final-spec"}}}
+        Response: {"action": "move_document", "status": "success", "old_uri": "kb://temp/draft", "new_uri": "kb://docs/final-spec"}
         """
         try:
             if action == "rebuild_search_index":
@@ -539,26 +535,26 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
             
             elif action == "move_document":
                 # Validate required parameters
-                path = options.get("path")
-                new_path = options.get("new_path")
+                uri = options.get("uri")
+                new_uri = options.get("new_uri")
                 
-                if not path:
+                if not uri:
                     return {
                         "action": action,
                         "status": "error",
-                        "error": "path parameter is required for move_document action"
+                        "error": "uri parameter is required for move_document action"
                     }
                 
-                if not new_path:
+                if not new_uri:
                     return {
                         "action": action,
                         "status": "error",
-                        "error": "new_path parameter is required for move_document action"
+                        "error": "new_uri parameter is required for move_document action"
                     }
                 
                 # Parse both paths
-                old_components = PathComponents.parse_path(path)
-                new_components = PathComponents.parse_path(new_path)
+                old_components = PathComponents.parse_path(uri)
+                new_components = PathComponents.parse_path(new_uri)
                 
                 # Move document using components
                 index = await kb_manager.move_document(
@@ -569,24 +565,24 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                 return {
                     "action": action,
                     "status": "success",
-                    "old_path": path,
-                    "new_path": new_path,
+                    "old_uri": uri,
+                    "new_uri": new_uri,
                     "result": index.model_dump()
                 }
             
             elif action == "delete":
                 # Validate required parameters
-                path = options.get("path")
+                uri = options.get("uri")
                 
-                if not path:
+                if not uri:
                     return {
                         "action": action,
                         "status": "error",
-                        "error": "path parameter is required for delete action"
+                        "error": "uri parameter is required for delete action"
                     }
                 
                 # Parse the path
-                components = PathComponents.parse_path(path)
+                components = PathComponents.parse_path(uri)
                 
                 # Archive document (removes from indices and moves to archive)
                 result = await kb_manager.archive_document(components)
@@ -594,7 +590,7 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                 return {
                     "action": action,
                     "status": "success",
-                    "path": path,
+                    "uri": uri,
                     "result": result
                 }
             

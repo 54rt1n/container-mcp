@@ -11,6 +11,7 @@ from pathlib import Path
 import logging
 import asyncio
 from typing import Dict, Any, Optional, List
+from starlette.middleware.cors import CORSMiddleware
 
 # Load environment file directly
 def load_env_file():
@@ -71,9 +72,18 @@ class ContainerMCP(FastMCP):
     """Extended FastMCP with health endpoint."""
     
     def sse_app(self, mount_path: str = "") -> Starlette:
-        """Create SSE app with health endpoint."""
+        """Create SSE app with health endpoint and CORS support."""
         # Get the original SSE app
         app = super().sse_app(mount_path)
+        
+        # Add CORS middleware
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],  # Allow all origins - you can restrict this as needed
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
         
         # Add health endpoint
         async def health_endpoint(request):

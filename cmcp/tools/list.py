@@ -27,31 +27,19 @@ def create_list_tools(mcp: FastMCP, list_manager: ListManager) -> None:
         description: str = "", 
         tags: Optional[List[str]] = None
     ) -> Dict[str, Any]:
-        """Create a new list for organizing tasks, notes, shopping items, or any other collection.
+        """Create a new organized list for tasks, notes, shopping, or any collection.
         
-        Lists are org-mode based and support various item statuses (TODO, DONE, WAITING, etc.) 
-        and can be tagged for easy categorization.
+        This tool creates org-mode based lists that support various item statuses 
+        (TODO, DONE, WAITING, etc.) and can be tagged for organization. Perfect for 
+        project management, shopping lists, or general note-taking.
         
-        Args:
-            name: Unique identifier for the list (used as filename, alphanumeric/dash/underscore only)
-            title: Human-readable display title (defaults to name if not provided)
-            list_type: Category of list - "todo", "shopping", "notes", "checklist", or custom type
-            description: Brief description of the list's purpose or contents
-            tags: Tags for categorizing and filtering lists (e.g., ["work", "urgent", "project-x"])
-            
-        Returns:
-            Dictionary containing:
-            - success: Whether the list was created successfully
-            - name: The list identifier
-            - metadata: Complete list metadata including creation timestamp
-            - error: Error message if creation failed
-            
         Examples:
-            Create a work todo list:
-            >>> list_create("work-tasks", "Work Tasks Q1 2025", "todo", "Quarterly objectives", ["work", "q1-2025"])
-            
-            Create a shopping list:
-            >>> list_create("groceries", "Grocery Shopping", "shopping", tags=["weekly", "essentials"])
+        
+        Request: {"name": "list_create", "parameters": {"name": "work-tasks", "title": "Q1 Work Tasks", "list_type": "todo", "description": "Quarterly objectives and tasks", "tags": ["work", "q1-2025"]}}
+        Response: {"success": true, "name": "work-tasks", "metadata": {"title": "Q1 Work Tasks", "type": "todo", "created": "2024-01-01T10:00:00Z"}}
+        
+        Request: {"name": "list_create", "parameters": {"name": "groceries", "title": "Weekly Groceries", "list_type": "shopping", "tags": ["weekly", "essentials"]}}
+        Response: {"success": true, "name": "groceries", "metadata": {"title": "Weekly Groceries", "type": "shopping", "created": "2024-01-01T10:30:00Z"}}
         """
         return await list_manager.create_list(
             name=name,
@@ -69,48 +57,19 @@ def create_list_tools(mcp: FastMCP, list_manager: ListManager) -> None:
         status_filter: Optional[str] = None,
         tag_filter: Optional[List[str]] = None
     ) -> Dict[str, Any]:
-        """Retrieve list(s) with flexible filtering and display options.
+        """Retrieve and browse lists with flexible filtering options.
         
-        This tool can:
-        - Get all lists (when name is None)
-        - Get a specific list with all its items
-        - Get just list metadata/summary without items
-        - Filter items by status or tags
-        - Provide statistics about list completion
+        This tool can browse all your lists, get details of specific lists, 
+        filter items by status or tags, and provide completion statistics.
+        Perfect for checking progress or finding specific items.
         
-        Args:
-            name: List identifier to retrieve. If None, returns all lists (summary only)
-            include_items: Whether to include list items in response (ignored if name is None)
-            summary_only: Return only metadata and statistics, not individual items
-            status_filter: Filter items by status ("TODO", "DONE", "WAITING", "CANCELLED", "NEXT", "SOMEDAY")
-            tag_filter: Filter items that have ALL specified tags
-            
-        Returns:
-            When retrieving all lists (name is None):
-                - success: Operation status
-                - lists: Array of list summaries with metadata
-                - count: Total number of lists
-                
-            When retrieving specific list:
-                - success: Operation status
-                - name: List identifier
-                - metadata: List metadata (title, type, description, dates, tags)
-                - items: Array of items (if include_items=True and summary_only=False)
-                - statistics: Item counts by status and completion percentage
-                - error: Error message if retrieval failed
-                
         Examples:
-            Get all lists:
-            >>> list_get()
-            
-            Get specific list with all items:
-            >>> list_get("work-tasks")
-            
-            Get only TODO items from a list:
-            >>> list_get("work-tasks", status_filter="TODO")
-            
-            Get summary statistics only:
-            >>> list_get("work-tasks", summary_only=True)
+        
+        Request: {"name": "list_get", "parameters": {}}
+        Response: {"success": true, "lists": [{"name": "work-tasks", "title": "Q1 Work Tasks", "type": "todo"}], "count": 3}
+        
+        Request: {"name": "list_get", "parameters": {"name": "work-tasks", "status_filter": "TODO"}}
+        Response: {"success": true, "name": "work-tasks", "items": [{"index": 0, "text": "Review code", "status": "TODO"}], "statistics": {"total_items": 5, "completion_percentage": 60.0}}
         """
         # Get all lists
         if name is None:
@@ -182,53 +141,19 @@ def create_list_tools(mcp: FastMCP, list_manager: ListManager) -> None:
         status: Optional[str] = None,
         tags: Optional[List[str]] = None
     ) -> Dict[str, Any]:
-        """Add, update, or remove items in a list with a single flexible tool.
+        """Modify list items by adding, updating, or removing them.
         
-        This unified tool handles all item-level modifications:
-        - Add new items with initial status and tags
-        - Update existing items (text, status, or tags)
-        - Remove items from the list
-        - Quickly toggle item status between TODO/DONE
+        This flexible tool handles all item operations within a list. Add new tasks,
+        update existing items (change text, status, or tags), mark items as done,
+        or remove completed items. Perfect for managing dynamic lists.
         
-        Args:
-            list_name: Identifier of the list to modify
-            action: Operation to perform - "add", "update", or "remove"
-            item_text: 
-                - For "add": Text content of the new item (required)
-                - For "update": New text for the item (optional, unchanged if None)
-                - For "remove": Not used
-            item_index: 
-                - For "add": Not used
-                - For "update"/"remove": 0-based index of item to modify (required)
-            status: Item status - "TODO", "DONE", "WAITING", "CANCELLED", "NEXT", "SOMEDAY"
-                - For "add": Initial status (defaults to "TODO")
-                - For "update": New status (optional, unchanged if None)
-                - For "remove": Not used
-            tags: Tags for categorizing items
-                - For "add": Initial tags for new item
-                - For "update": Replace all tags (None keeps existing tags)
-                - For "remove": Not used
-                
-        Returns:
-            Dictionary containing:
-            - success: Whether the operation succeeded
-            - action: The action performed
-            - item: Details of the affected item
-            - list_name: The list that was modified
-            - error: Error message if operation failed
-            
         Examples:
-            Add a new task:
-            >>> list_modify("work-tasks", "add", "Review Q1 report", status="TODO", tags=["urgent", "reports"])
-            
-            Mark item as done:
-            >>> list_modify("work-tasks", "update", item_index=2, status="DONE")
-            
-            Update item text and add tags:
-            >>> list_modify("shopping", "update", item_index=0, item_text="Buy organic milk", tags=["dairy", "organic"])
-            
-            Remove completed item:
-            >>> list_modify("work-tasks", "remove", item_index=5)
+        
+        Request: {"name": "list_modify", "parameters": {"list_name": "work-tasks", "action": "add", "item_text": "Review Q1 report", "status": "TODO", "tags": ["urgent", "reports"]}}
+        Response: {"success": true, "action": "add", "item": {"index": 3, "text": "Review Q1 report", "status": "TODO", "tags": ["urgent", "reports"]}}
+        
+        Request: {"name": "list_modify", "parameters": {"list_name": "work-tasks", "action": "update", "item_index": 2, "status": "DONE"}}
+        Response: {"success": true, "action": "update", "item": {"index": 2, "text": "Complete project setup", "status": "DONE"}}
         """
         try:
             if action == "add":
@@ -274,21 +199,17 @@ def create_list_tools(mcp: FastMCP, list_manager: ListManager) -> None:
     async def list_delete(name: str) -> Dict[str, Any]:
         """Permanently delete an entire list and all its items.
         
-        WARNING: This action cannot be undone. The list file will be archived
-        but not immediately deleted from the filesystem.
+        This tool completely removes a list from the system. Use with caution as 
+        this action cannot be undone. The list file will be archived for safety
+        but the list will no longer be accessible through normal operations.
         
-        Args:
-            name: Identifier of the list to delete
-            
-        Returns:
-            Dictionary containing:
-            - success: Whether the list was deleted successfully
-            - name: The deleted list identifier
-            - items_count: Number of items that were in the list
-            - error: Error message if deletion failed
-            
-        Example:
-            >>> list_delete("old-shopping-list")
+        Examples:
+        
+        Request: {"name": "list_delete", "parameters": {"name": "old-shopping-list"}}
+        Response: {"success": true, "name": "old-shopping-list", "items_count": 5, "archived": true}
+        
+        Request: {"name": "list_delete", "parameters": {"name": "completed-project-tasks"}}
+        Response: {"success": true, "name": "completed-project-tasks", "items_count": 12, "archived": true}
         """
         return await list_manager.delete_list(name)
     
@@ -299,46 +220,19 @@ def create_list_tools(mcp: FastMCP, list_manager: ListManager) -> None:
         search_in: List[Literal["text", "tags"]] = ["text"],
         case_sensitive: bool = False
     ) -> Dict[str, Any]:
-        """Search for items across one or more lists with flexible search options.
+        """Search for items across multiple lists by text or tags.
         
-        Powerful search tool that can find items by text content or tags across
-        multiple lists simultaneously. Results include full context about where
-        each item was found.
+        This powerful search tool finds items by content or tags across all your lists
+        or specific ones. Get comprehensive results showing exactly where each match
+        was found, perfect for locating tasks or items across your organization system.
         
-        Args:
-            query: Search term or phrase to look for
-            list_names: Specific lists to search in. If None, searches all lists
-            search_in: Where to search - ["text"] for item content, ["tags"] for tags, or both
-            case_sensitive: Whether search should be case-sensitive (default: False)
-            
-        Returns:
-            Dictionary containing:
-            - success: Whether search completed successfully
-            - query: The search query used
-            - matches: Array of matching items with:
-                - list_name: Which list contains the item
-                - list_title: Human-readable list title
-                - item_index: Position in the list
-                - item_text: Full item text
-                - item_status: Current status
-                - item_tags: Associated tags
-                - match_type: Where match was found ("text" or "tag")
-            - total_matches: Total number of matching items
-            - lists_searched: Number of lists searched
-            - error: Error message if search failed
-            
         Examples:
-            Search all lists for a term:
-            >>> list_search("meeting")
-            
-            Search specific lists:
-            >>> list_search("budget", list_names=["work-tasks", "projects"])
-            
-            Search only in tags:
-            >>> list_search("urgent", search_in=["tags"])
-            
-            Search both text and tags with case sensitivity:
-            >>> list_search("ASAP", search_in=["text", "tags"], case_sensitive=True)
+        
+        Request: {"name": "list_search", "parameters": {"query": "meeting", "search_in": ["text"]}}
+        Response: {"success": true, "query": "meeting", "matches": [{"list_name": "work-tasks", "item_text": "Prepare for team meeting", "item_status": "TODO", "match_type": "text"}], "total_matches": 3}
+        
+        Request: {"name": "list_search", "parameters": {"query": "urgent", "list_names": ["work-tasks", "projects"], "search_in": ["tags"], "case_sensitive": false}}
+        Response: {"success": true, "query": "urgent", "matches": [{"list_name": "work-tasks", "item_text": "Fix critical bug", "item_tags": ["urgent", "bug"], "match_type": "tag"}], "total_matches": 2}
         """
         try:
             matching_items = []
