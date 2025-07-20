@@ -31,8 +31,8 @@ class PartialPathComponents(NamedTuple):
         return path_str
 
     @property
-    def urn(self) -> str:
-        """Get the URN representation (scheme://namespace/collection/name)."""
+    def uri(self) -> str:
+        """Get the URI representation (scheme://namespace/collection/name)."""
         scheme = self.scheme or "kb"
         result = f"{scheme}://{self.path}"
         if self.fragment and "#" not in result:
@@ -294,12 +294,13 @@ class PathComponents(PartialPathComponents):
             ValueError: If path format is invalid
         """
         partial = super().parse_path(path)
+        falsy_path = f"{partial.scheme}://{partial.namespace}/{partial.collection}/{partial.name}"
         if partial.name is None:
-            raise ValueError("Path must contain a name")
+            raise ValueError(f"Path must contain a name: {falsy_path}")
         if partial.namespace is None:
-            raise ValueError("Path must contain a namespace")
+            raise ValueError(f"Path must contain a namespace: {falsy_path}")
         if partial.collection is None:
-            raise ValueError("Path must contain a collection")
+            raise ValueError(f"Path must contain a collection: {falsy_path}")
         
         scheme = partial.scheme or "kb"
         

@@ -211,9 +211,16 @@ class FileManager:
         logger.debug(f"Listing directory: {path} (recursive={recursive})")
         entries = []
         
+        # Directories to skip during recursive listing
+        skip_dirs = {'.git', 'node_modules', '__pycache__', '.venv'}
+        
         if recursive:
             # Walk the directory tree recursively
             for root, dirs, files in os.walk(full_path):
+                # Remove directories we want to skip from the dirs list
+                # This modifies dirs in place and prevents os.walk from recursing into them
+                dirs[:] = [d for d in dirs if d not in skip_dirs]
+                
                 # Process all files in current directory
                 for file in files:
                     file_path = os.path.join(root, file)

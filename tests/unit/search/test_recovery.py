@@ -128,7 +128,7 @@ class TestSearchIndexRecovery:
             mock_index = Mock()
             mock_index.references = []
             mock_index.preferences = []
-            mock_index.urn = f"kb://{components.path}"
+            mock_index.uri = f"kb://{components.path}"
             return mock_index
         
         recovery.document_store.read_content = AsyncMock(side_effect=mock_read_content)

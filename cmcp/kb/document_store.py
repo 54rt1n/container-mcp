@@ -11,9 +11,12 @@ import shutil
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from pathlib import Path
+import logging
 
 from .models import DocumentIndex, DocumentFragment
 from .path import PathComponents, PartialPathComponents
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentStore:
@@ -286,7 +289,7 @@ class DocumentStore:
         index_path = document_path / "index.json"
         
         if not index_path.exists():
-            raise FileNotFoundError(f"Index file not found for document {components.urn}")
+            raise FileNotFoundError(f"Index file not found for document {components.uri}")
         
         with open(index_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
@@ -350,6 +353,7 @@ class DocumentStore:
         
         # Search for index.json files
         documents = []
+        logger.info(f"Searching for documents in: {search_path}")
         for index_file in search_path.glob("**/index.json"):
             doc_path = index_file.parent
             relative_path = doc_path.relative_to(self.base_path)
@@ -404,7 +408,7 @@ class DocumentStore:
         document_path = self.base_path / components.path
         
         if not document_path.exists():
-            raise FileNotFoundError(f"Document not found: {components.urn}")
+            raise FileNotFoundError(f"Document not found: {components.uri}")
         
         # Delete all files in the document directory
         for file_path in document_path.glob("*"):
@@ -442,10 +446,10 @@ class DocumentStore:
         new_document_path = self.base_path / new_components.path
 
         if not document_path.exists():
-            raise FileNotFoundError(f"Document not found: {components.urn}")
+            raise FileNotFoundError(f"Document not found: {components.uri}")
         
         if new_document_path.exists():
-            raise FileNotFoundError(f"New document path already exists: {new_components.urn}")
+            raise FileNotFoundError(f"New document path already exists: {new_components.uri}")
         
         # Move the document directory
         shutil.move(document_path, new_document_path)

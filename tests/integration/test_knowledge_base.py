@@ -169,7 +169,7 @@ async def test_document_references(kb_manager):
     # Verify reference was added
     index = await kb_manager.read_index(source_path)
     assert len(index.references) == 1
-    assert ImplicitRDFTriple(predicate='references', object=target_path.urn) in index.references
+    assert ImplicitRDFTriple(predicate='references', object=target_path.uri) in index.references
     
     # Try adding the same reference again (should not duplicate)
     result = await kb_manager.add_reference(source_path, target_path, 'references')
@@ -196,8 +196,8 @@ async def test_document_references(kb_manager):
     # Verify reference was removed
     index = await kb_manager.read_index(source_path)
     assert len(index.references) == 1
-    assert ImplicitRDFTriple(predicate='references', object=target_path.urn) not in index.references
-    assert ImplicitRDFTriple(predicate='cites', object=another_target.urn) in index.references
+    assert ImplicitRDFTriple(predicate='references', object=target_path.uri) not in index.references
+    assert ImplicitRDFTriple(predicate='cites', object=another_target.uri) in index.references
 
 
 @pytest.mark.asyncio

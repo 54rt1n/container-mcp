@@ -69,20 +69,20 @@ class SearchIndexRecovery:
 
                 if content:
                     await asyncio.to_thread(
-                        self.search_index_manager.update_sparse_index, components.urn, content
+                        self.search_index_manager.update_sparse_index, components.uri, content
                     )
 
                 for ref in index.references:
                     await asyncio.to_thread(
                         self.search_index_manager.add_triple,
-                        components.urn, ref.predicate, ref.object, "reference"
+                        components.uri, ref.predicate, ref.object, "reference"
                     )
                     triples_processed += 1
                 
                 for pref in index.preferences:
                     await asyncio.to_thread(
                         self.search_index_manager.add_triple,
-                        components.urn, pref.predicate, pref.object, "preference"
+                        components.uri, pref.predicate, pref.object, "preference"
                     )
                     triples_processed += 1
                 

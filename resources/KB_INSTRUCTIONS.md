@@ -105,8 +105,8 @@ Returns: `{results: [{urn: "...", content: "...", rerank_score: 0.95}], count: 1
 kb_search
 {
     "query": "security implementation",
-    "graph_seed_urns": ["kb://guides/authentication/oauth2-flow"],
-    "graph_expand_hops": 2,
+    "seed_uris": ["kb://guides/authentication/oauth2-flow"],
+    "expand_hops": 2,
     "relation_predicates": ["references", "implements"],
     "top_k_rerank": 15,
     "include_content": true
@@ -279,8 +279,8 @@ kb_update_triples
 kb_search
 {
     "query": "user management API endpoints",
-    "graph_seed_urns": ["kb://api/endpoints/user-management"],
-    "graph_expand_hops": 1,
+    "seed_uris": ["kb://api/endpoints/user-management"],
+    "expand_hops": 1,
     "relation_predicates": ["references", "implements"],
     "include_content": true,
     "include_index": true
@@ -308,8 +308,8 @@ kb_search
 # Expand through relationships
 kb_search
 {
-    "graph_seed_urns": ["kb://architecture/database/core"],
-    "graph_expand_hops": 2,
+    "seed_uris": ["kb://architecture/database/core"],
+    "expand_hops": 2,
     "relation_predicates": ["implements", "uses", "extends"],
     "include_content": true,
     "top_k_rerank": 10

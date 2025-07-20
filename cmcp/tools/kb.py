@@ -52,9 +52,10 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
     
     @mcp.tool()
     async def kb_search(query: Optional[str] = None,
-                      graph_seed_urns: Optional[List[str]] = None,
-                      graph_expand_hops: int = 0,
-                      filter_urns: Optional[List[str]] = None,
+                      seed_uris: Optional[List[str]] = None,
+                      root_uri: Optional[str] = None,
+                      expand_hops: int = 0,
+                      filter_uris: Optional[List[str]] = None,
                       relation_predicates: Optional[List[str]] = None,
                       top_k_sparse: int = 50,
                       top_k_rerank: int = 10,
@@ -66,21 +67,55 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
         This tool searches through documents in the knowledge base using both text matching
         and graph relationship traversal. You can search by content, follow document references,
         or combine both approaches for comprehensive knowledge discovery.
+        
+        Args:
+            query: Text query to search for
+             or
+            seed_uris: Starting URIs for graph expansion (full kb://namespace/collection/name uri)
+             or
+            root_uri: Root URI to start search from (partial kb://namespace <optional>/collection <optional> uri)
+            
+            expand_hops: Number of relationship hops to expand
+            filter_uris: URIs to filter out from search
+            relation_predicates: RDF predicates to use for graph expansion
+            top_k_sparse: Number of top sparse results to return
+            top_k_rerank: Number of top reranked results to return
+            include_content: Whether to include document content in results
+            include_index: Whether to include document index in results
+            use_reranker: Whether to use reranker to score results
 
         Examples:
         
         Request: {"name": "kb_search", "parameters": {"query": "machine learning algorithms", "top_k_rerank": 5}}
         Response: {"results": [{"uri": "kb://ai/ml/algorithms", "score": 0.95, "title": "ML Algorithms Overview"}], "count": 5}
-        
-        Request: {"name": "kb_search", "parameters": {"graph_seed_uris": ["kb://project/docs/main"], "graph_expand_hops": 2, "include_content": true}}
-        Response: {"results": [{"uri": "kb://project/docs/api", "content": "API documentation...", "relations": ["references"]}], "count": 8}
+
+        To search a branch of the knowledge base and getting the index:
+        Request: {"name": "kb_search", "parameters": {"root_uri": "kb://", "include_index": true}}
+
+        To search a specific document with graph expansion, returning the content:
+        Request: {"name": "kb_search", "parameters": {"seed_uris": ["kb://project/docs/main"], "expand_hops": 2, "include_content": true}}
         """
         try:
+            if root_uri is not None:
+                partial_components = PartialPathComponents.parse_path(root_uri)
+                logger.info(f"Searching branch of the knowledge base: {partial_components}")
+                results = await kb_manager.list_documents(
+                    components=partial_components,
+                    recursive=True,
+                    filter_uris=filter_uris,
+                    include_index=include_index,
+                    include_content=include_content
+                )
+                return {"results": results, "count": len(results)}
+            
+            if query is None and seed_uris is None:
+                return {"status": "error", "error": "Either query or seed_uris or root_uri must be provided"}
+            
             results = await kb_manager.search(
                 query=query,
-                graph_seed_urns=graph_seed_urns,
-                graph_expand_hops=graph_expand_hops,
-                filter_urns=filter_urns,
+                seed_uris=seed_uris,
+                expand_hops=expand_hops,
+                filter_uris=filter_uris,
                 relation_predicates=relation_predicates,
                 top_k_sparse=top_k_sparse,
                 top_k_rerank=top_k_rerank,
@@ -127,7 +162,7 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
             for doc_path in documents:
                 try:
                     components = PathComponents.parse_path(doc_path)
-                    doc_data = {"path": doc_path}
+                    doc_data = {"uri": components.uri}
                     
                     # Read index if requested
                     if include_index:
@@ -333,7 +368,7 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
             if await kb_manager.check_content(components) and not force:
                 return {
                     "status": "error",
-                    "error": f"Content already exists at path: {components.urn}. Use force=True to overwrite existing content."
+                    "error": f"Content already exists at path: {components.uri}. Use force=True to overwrite existing content."
                 }
             
             # Write content with the components

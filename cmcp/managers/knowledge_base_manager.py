@@ -93,8 +93,15 @@ class KnowledgeBaseManager:
         """Initialize the document store and the search service."""
         if self.document_store is None:
             os.makedirs(self.storage_path, exist_ok=True)
-            self.document_store = DocumentStore(self.storage_path)
+            
+            # Create documents subdirectory for document storage
+            documents_path = os.path.join(self.storage_path, "documents")
+            os.makedirs(documents_path, exist_ok=True)
+            
+            # Initialize DocumentStore with the documents subdirectory
+            self.document_store = DocumentStore(documents_path)
             self.logger.info(f"Initialized knowledge base at: {self.storage_path}")
+            self.logger.info(f"Documents stored in: {documents_path}")
             
             if self.search_enabled:
                 try:
@@ -135,7 +142,7 @@ class KnowledgeBaseManager:
         self.document_store.write_content(components, content)
         
         if self.search_enabled and self.search_service:
-            await self.search_service.update_document_in_indices(components.urn, content)
+            await self.search_service.update_document_in_indices(components.uri, content)
         
         return self.document_store.update_index(components, {"updated_at": datetime.now(timezone.utc)})
         
@@ -211,7 +218,7 @@ class KnowledgeBaseManager:
         self.check_initialized()
         
         source_index = self.document_store.read_index(components)
-        triple = ImplicitRDFTriple(predicate=relation, object=ref_components.urn)
+        triple = ImplicitRDFTriple(predicate=relation, object=ref_components.uri)
         if triple in source_index.references:
             return {"status": "success", "message": "Reference already exists", "added": False}
 
@@ -219,13 +226,13 @@ class KnowledgeBaseManager:
         self.document_store.update_index(components, {"references": source_index.references})
         
         ref_index = self.document_store.read_index(ref_components)
-        reverse_triple = ImplicitRDFTriple(predicate=relation, object=components.urn)
+        reverse_triple = ImplicitRDFTriple(predicate=relation, object=components.uri)
         if reverse_triple not in ref_index.referenced_by:
             ref_index.referenced_by.append(reverse_triple)
             self.document_store.update_index(ref_components, {"referenced_by": ref_index.referenced_by})
 
         if self.search_enabled and self.search_service:
-            await self.search_service.add_triple_to_indices(components.urn, relation, ref_components.urn, "reference")
+            await self.search_service.add_triple_to_indices(components.uri, relation, ref_components.uri, "reference")
             
         return {"status": "success", "message": "Reference added", "added": True}
     
@@ -234,7 +241,7 @@ class KnowledgeBaseManager:
         self.check_initialized()
         
         index = self.document_store.read_index(components)
-        ref_to_remove = ImplicitRDFTriple(predicate=relation, object=ref_components.urn)
+        ref_to_remove = ImplicitRDFTriple(predicate=relation, object=ref_components.uri)
         
         if ref_to_remove not in index.references:
             return {"status": "unchanged", "reference_count": len(index.references)}
@@ -245,17 +252,17 @@ class KnowledgeBaseManager:
         # Also remove the reverse reference from the target document
         try:
             ref_index = self.document_store.read_index(ref_components)
-            reverse_triple = ImplicitRDFTriple(predicate=relation, object=components.urn)
+            reverse_triple = ImplicitRDFTriple(predicate=relation, object=components.uri)
             if reverse_triple in ref_index.referenced_by:
                 updated_referenced_by = [ref for ref in ref_index.referenced_by if ref != reverse_triple]
                 self.document_store.update_index(ref_components, {"referenced_by": updated_referenced_by})
         except FileNotFoundError:
-            self.logger.warning(f"Referenced document not found when trying to remove reverse reference: {ref_components.urn}")
+            self.logger.warning(f"Referenced document not found when trying to remove reverse reference: {ref_components.uri}")
         except Exception as e:
-            self.logger.error(f"Failed to remove reverse reference from {ref_components.urn}: {e}", exc_info=True)
+            self.logger.error(f"Failed to remove reverse reference from {ref_components.uri}: {e}", exc_info=True)
 
         if self.search_enabled and self.search_service:
-            await self.search_service.delete_triple_from_indices(components.urn, relation, ref_components.urn, "reference")
+            await self.search_service.delete_triple_from_indices(components.uri, relation, ref_components.uri, "reference")
             
         return {"status": "updated", "reference_count": len(updated_refs)}
 
@@ -274,7 +281,7 @@ class KnowledgeBaseManager:
 
         if self.search_enabled and self.search_service:
             for p in added_prefs:
-                await self.search_service.add_triple_to_indices(components.urn, p.predicate, p.object, "preference")
+                await self.search_service.add_triple_to_indices(components.uri, p.predicate, p.object, "preference")
         
         return {"status": "updated", "preference_count": len(updated_index.preferences)}
     
@@ -292,7 +299,7 @@ class KnowledgeBaseManager:
         
         if self.search_enabled and self.search_service:
             for p in removed_prefs:
-                await self.search_service.delete_triple_from_indices(components.urn, p.predicate, p.object, "preference")
+                await self.search_service.delete_triple_from_indices(components.uri, p.predicate, p.object, "preference")
 
         return {"status": "updated", "preference_count": len(updated_index.preferences)}
 
@@ -303,21 +310,38 @@ class KnowledgeBaseManager:
         
         if self.search_enabled and self.search_service:
             for p in index.preferences:
-                await self.search_service.delete_triple_from_indices(components.urn, p.predicate, p.object, "preference")
+                await self.search_service.delete_triple_from_indices(components.uri, p.predicate, p.object, "preference")
 
         self.document_store.update_index(components, {"preferences": []})
         return {"status": "updated", "preference_count": 0}
 
     # === Filesystem & Lifecycle Methods ===
     
-    async def list_documents(self, components: Optional[PartialPathComponents] = None, recursive: bool = True) -> List[str]:
+    async def list_documents(self, components: Optional[PartialPathComponents] = None, recursive: bool = True, filter_uris: Optional[List[str]] = None, include_content: bool = False, include_index: bool = False) -> List[str]:
         """List documents in the knowledge base."""
         self.check_initialized()
         if components is None:
             components = PartialPathComponents()
         if recursive:
-            return self.document_store.find_documents_recursive(components)
-        return self.document_store.find_documents_shallow(components)
+            document_paths = self.document_store.find_documents_recursive(components)
+        else:
+            document_paths = self.document_store.find_documents_shallow(components)
+        logger.info(f"Found {len(document_paths)} documents: {document_paths}")
+        documents = []
+        for path_name in document_paths:
+            if filter_uris and path_name in filter_uris:
+                continue
+            logger.info(f"Found document: {path_name}")
+            path = PathComponents.parse_path(path_name)
+            document = {
+                "uri": path.uri
+            }
+            if include_content:
+                document["content"] = await self.read_content(path)
+            if include_index:
+                document["index"] = self.document_store.read_index(path)
+            documents.append(document)
+        return documents
 
     async def move_document(self, components: PathComponents, new_components: PathComponents) -> DocumentIndex:
         """Move a document, updating search index via SearchService."""
@@ -333,7 +357,7 @@ class KnowledgeBaseManager:
                 referencing_components = PathComponents.parse_path(reverse_ref.object)
                 referencing_index = self.document_store.read_index(referencing_components)
                 updated_references = [
-                    ImplicitRDFTriple(ref.predicate, new_components.urn) if ref.object == components.urn else ref
+                    ImplicitRDFTriple(ref.predicate, new_components.uri) if ref.object == components.uri else ref
                     for ref in referencing_index.references
                 ]
                 if updated_references != referencing_index.references:
@@ -345,7 +369,7 @@ class KnowledgeBaseManager:
         if self.search_enabled and self.search_service:
             try:
                 content = await self.read_content(new_components)
-                await self.search_service.move_document_in_indices(components.urn, new_components.urn, content or "")
+                await self.search_service.move_document_in_indices(components.uri, new_components.uri, content or "")
             except Exception as e:
                 self.logger.error(f"SearchService failed to move document indices: {e}", exc_info=True)
 
@@ -356,25 +380,25 @@ class KnowledgeBaseManager:
         self.check_initialized()
         
         if not self.document_store.check_index(components):
-            return {"status": "not_found", "message": f"Document not found: {components.urn}"}
+            return {"status": "not_found", "message": f"Document not found: {components.uri}"}
         
         # Clean up references before deleting
         # (Simplified logic, a real implementation would be more robust)
 
         # Delegate de-indexing first
         if self.search_enabled and self.search_service:
-            await self.search_service.delete_document_from_indices(components.urn)
+            await self.search_service.delete_document_from_indices(components.uri)
 
         # Then delete from document store
         self.document_store.delete_document(components)
-        return {"status": "deleted", "message": f"Document deleted: {components.urn}"}
+        return {"status": "deleted", "message": f"Document deleted: {components.uri}"}
 
     async def archive_document(self, components: PathComponents) -> Dict[str, Any]:
         """Archives a document by moving it to the 'archive' namespace."""
         self.check_initialized()
         
         if not self.document_store.check_index(components):
-            return {"status": "not_found", "message": f"Document not found: {components.urn}"}
+            return {"status": "not_found", "message": f"Document not found: {components.uri}"}
         
         index = self.document_store.read_index(components)
         
@@ -387,7 +411,7 @@ class KnowledgeBaseManager:
 
         # First, remove from search indices
         if self.search_enabled and self.search_service:
-            await self.search_service.delete_document_from_indices(components.urn)
+            await self.search_service.delete_document_from_indices(components.uri)
 
         # Clean up references before moving
         for ref in index.references:
@@ -395,14 +419,14 @@ class KnowledgeBaseManager:
                 ref_comp = PathComponents.parse_path(ref.object)
                 await self.remove_reference(components, ref_comp, ref.predicate)
             except Exception as e:
-                self.logger.warning(f"Failed to clean up outgoing reference from {components.urn} to {ref.object}: {e}")
+                self.logger.warning(f"Failed to clean up outgoing reference from {components.uri} to {ref.object}: {e}")
 
         for ref_by in index.referenced_by:
             try:
                 ref_by_comp = PathComponents.parse_path(ref_by.object)
                 await self.remove_reference(ref_by_comp, components, ref_by.predicate)
             except Exception as e:
-                self.logger.warning(f"Failed to clean up incoming reference to {components.urn} from {ref_by.object}: {e}")
+                self.logger.warning(f"Failed to clean up incoming reference to {components.uri} from {ref_by.object}: {e}")
                 
         # Move the document
         try:
@@ -410,9 +434,9 @@ class KnowledgeBaseManager:
             self.logger.info(f"Archived document {components.path} to {archive_components.path}")
             return {
                 "status": "archived",
-                "message": f"Document archived: {components.urn}",
+                "message": f"Document archived: {components.uri}",
                 "archive_path": archive_components.path,
-                "archive_urn": archive_components.urn
+                "archive_uri": archive_components.uri
             }
         except Exception as e:
             self.logger.error(f"Failed to move document to archive: {e}", exc_info=True)
@@ -420,7 +444,7 @@ class KnowledgeBaseManager:
             if self.search_enabled and self.search_service:
                 try:
                     content = await self.read_content(components)
-                    await self.search_service.update_document_in_indices(components.urn, content or "")
+                    await self.search_service.update_document_in_indices(components.uri, content or "")
                 except Exception as reindex_e:
                     self.logger.error(f"Failed to re-index document after failed archive attempt: {reindex_e}")
             return {"status": "error", "message": str(e)}

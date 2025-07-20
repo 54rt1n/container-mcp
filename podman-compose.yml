@@ -4,8 +4,9 @@ services:
   container-mcp:
     image: container-mcp:latest
     container_name: container-mcp
+    user: "${UID}:${GID}"
     ports:
-      - "0.0.0.0:8000:8000"
+      - "0.0.0.0:8001:8000"
     volumes:
       - ./volume/config:/app/config:ro
       - ./volume/data:/app/data:rw

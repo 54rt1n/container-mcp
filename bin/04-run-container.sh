@@ -71,8 +71,10 @@ if [ "${RUN_CONTAINER}" = "true" ]; then
     
     # Get configuration from env file
     if [ -f "volume/config/app.env" ]; then
+        echo "Using app.env file"
         ENV_FILE="volume/config/app.env"
     elif [ -f "volume/config/default.env" ]; then
+        echo "Using default.env file"
         ENV_FILE="volume/config/default.env"
     else
         echo "No configuration file found!"
@@ -90,12 +92,14 @@ if [ "${RUN_CONTAINER}" = "true" ]; then
     # Run the container with the --replace flag to handle existing containers
     ${CONTAINER_CMD} run -d \
         --name ${CONTAINER_NAME} \
-        -p ${LISTENER_HOST}:8000:8000 \
+        --user $(id -u):$(id -g) \
+        -p ${LISTENER_HOST}:${MCP_PORT}:8000 \
         -v "$(pwd)/volume/config:/app/config:Z" \
         -v "$(pwd)/volume/logs:/app/logs:Z" \
         -v "$(pwd)/volume/data:/app/data:Z" \
         -v "$(pwd)/volume/sandbox:/app/sandbox:Z" \
         -v "$(pwd)/volume/temp:/app/temp:Z" \
+        -v "$(pwd)/volume/kb:/app/kb:Z" \
         --security-opt apparmor:unconfined \
         --restart unless-stopped \
         --env-file ${ENV_FILE} \

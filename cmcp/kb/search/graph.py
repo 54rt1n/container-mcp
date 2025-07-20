@@ -83,26 +83,26 @@ class GraphSearchIndex:
         query = self.tantivy.Query.boolean_query(term_queries)
         writer.delete_documents_by_query(query)
         
-    def find_neighbors(self, urns: List[str], relation_predicates: List[str] = ["references"], neighbor_limit: int = 1000, filter_urns: Optional[List[str]] = None) -> Set[str]:
-        """Find neighbors of given URNs based on specified relations."""
-        if not urns:
+    def find_neighbors(self, uris: List[str], relation_predicates: List[str] = ["references"], neighbor_limit: int = 1000, filter_uris: Optional[List[str]] = None) -> Set[str]:
+        """Find neighbors of given URIs based on specified relations."""
+        if not uris:
             return set()
         
         self.index.reload()
         searcher = self.index.searcher()
         
-        urn_query_forward = self.tantivy.Query.term_set_query(self.schema, "subject", urns)
-        urn_query_backward = self.tantivy.Query.term_set_query(self.schema, "object", urns)
+        uri_query_forward = self.tantivy.Query.term_set_query(self.schema, "subject", uris)
+        uri_query_backward = self.tantivy.Query.term_set_query(self.schema, "object", uris)
         pred_query = self.tantivy.Query.term_set_query(self.schema, "predicate", relation_predicates)
 
         from tantivy import Occur
         
         forward_query = self.tantivy.Query.boolean_query([
-            (Occur.Must, urn_query_forward),
+            (Occur.Must, uri_query_forward),
             (Occur.Must, pred_query)
         ])
         backward_query = self.tantivy.Query.boolean_query([
-            (Occur.Must, urn_query_backward),
+            (Occur.Must, uri_query_backward),
             (Occur.Must, pred_query)
         ])
         full_query = self.tantivy.Query.boolean_query([
@@ -116,18 +116,18 @@ class GraphSearchIndex:
             subj = doc.get_first("subject")
             obj = doc.get_first("object")
             
-            if subj in urns:
+            if subj in uris:
                 neighbors.add(obj)
-            elif obj in urns:
+            elif obj in uris:
                 neighbors.add(subj)
                 
-        return neighbors - set(urns)
+        return neighbors - set(uris)
 
-    def delete_document(self, writer, urn: str):
-        """Delete all triples associated with a given document URN."""
+    def delete_document(self, writer, uri: str):
+        """Delete all triples associated with a given document URI."""
         from tantivy import Occur
-        subject_query = self.tantivy.Query.term_query(self.schema, "subject", urn)
-        object_query = self.tantivy.Query.term_query(self.schema, "object", urn)
+        subject_query = self.tantivy.Query.term_query(self.schema, "subject", uri)
+        object_query = self.tantivy.Query.term_query(self.schema, "object", uri)
         
         query = self.tantivy.Query.boolean_query([
             (Occur.Should, subject_query),
@@ -143,17 +143,17 @@ class GraphSearchIndex:
             shutil.rmtree(self.index_path)
         self._initialize_index()
 
-    def update_moved_document(self, old_urn: str, new_urn: str):
-        """Update all triples when a document's URN changes."""
+    def update_moved_document(self, old_uri: str, new_uri: str):
+        """Update all triples when a document's URI changes."""
         # This is a complex operation that requires searching for all triples
-        # involving the old URN and then re-indexing them with the new URN.
+        # involving the old URI and then re-indexing them with the new URI.
         with self.get_writer() as writer:
             searcher = self.index.searcher()
             
-            # Find all triples where the old URN is the subject or object
+            # Find all triples where the old URI is the subject or object
             from tantivy import Occur
-            subject_query = self.tantivy.Query.term_query(self.schema, "subject", old_urn)
-            object_query = self.tantivy.Query.term_query(self.schema, "object", old_urn)
+            subject_query = self.tantivy.Query.term_query(self.schema, "subject", old_uri)
+            object_query = self.tantivy.Query.term_query(self.schema, "object", old_uri)
             combined_query = self.tantivy.Query.boolean_query([(Occur.Should, subject_query), (Occur.Should, object_query)])
             
             docs_to_update = []
@@ -163,9 +163,9 @@ class GraphSearchIndex:
 
             # Delete old documents and add new ones
             for doc_dict in docs_to_update:
-                if doc_dict.get("subject") == [old_urn]:
-                    self.delete_triple(writer, old_urn, doc_dict["predicate"][0], doc_dict["object"][0], doc_dict["triple_type"][0])
-                    self.add_triple(writer, new_urn, doc_dict["predicate"][0], doc_dict["object"][0], doc_dict["triple_type"][0])
-                if doc_dict.get("object") == [old_urn]:
-                    self.delete_triple(writer, doc_dict["subject"][0], doc_dict["predicate"][0], old_urn, doc_dict["triple_type"][0])
-                    self.add_triple(writer, doc_dict["subject"][0], doc_dict["predicate"][0], new_urn, doc_dict["triple_type"][0]) 
+                if doc_dict.get("subject") == [old_uri]:
+                    self.delete_triple(writer, old_uri, doc_dict["predicate"][0], doc_dict["object"][0], doc_dict["triple_type"][0])
+                    self.add_triple(writer, new_uri, doc_dict["predicate"][0], doc_dict["object"][0], doc_dict["triple_type"][0])
+                if doc_dict.get("object") == [old_uri]:
+                    self.delete_triple(writer, doc_dict["subject"][0], doc_dict["predicate"][0], old_uri, doc_dict["triple_type"][0])
+                    self.add_triple(writer, doc_dict["subject"][0], doc_dict["predicate"][0], new_uri, doc_dict["triple_type"][0]) 

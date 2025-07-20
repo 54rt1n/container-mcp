@@ -231,14 +231,14 @@ def test_path_property(path_input, expected_path_prop):
     ("#frag", "kb://#frag"), # Default scheme + fragment only
     ("s3://#frag.cfg", "s3://#frag.cfg"), # Scheme + fragment only
 ])
-def test_urn_property(path_input, expected_urn_prop):
-    """Test the .urn property reconstructs the URN correctly."""
+def test_uri_property(path_input, expected_uri_prop):
+    """Test the .uri property reconstructs the URI correctly."""
     # Use PathComponents if input is complete to test default scheme properly
     try:
         comp = PathComponents.parse_path(path_input)
     except ValueError: # Input was incomplete, use PartialPathComponents
         comp = PartialPathComponents.parse_path(path_input)
-    assert comp.urn == expected_urn_prop
+    assert comp.uri == expected_uri_prop
 
 # --- Test get_fragment_name method ---
 

@@ -191,7 +191,7 @@ async def test_write_content(kb_manager, sample_components):
     
     # Verify that the SearchService was called
     mock_search_service.update_document_in_indices.assert_awaited_once_with(
-        sample_components.urn, content
+        sample_components.uri, content
     )
     
     # Check the returned result
@@ -288,7 +288,7 @@ async def test_delete_document(kb_manager, sample_components):
     
     # Check that search service was called to delete from indices
     mock_search_service.delete_document_from_indices.assert_awaited_once_with(
-        sample_components.urn
+        sample_components.uri
     )
     
     # Check that document store was called to delete the document
@@ -366,7 +366,7 @@ async def test_add_reference(kb_manager, sample_components, sample_index_obj):
     
     # Verify search service call
     mock_search_service.add_triple_to_indices.assert_awaited_once_with(
-        sample_components.urn, "cites", ref_components.urn, "reference"
+        sample_components.uri, "cites", ref_components.uri, "reference"
     )
     
     # Verify the result
@@ -433,7 +433,7 @@ async def test_remove_reference(kb_manager, sample_components, sample_index_obj)
     
     # Verify search service call
     mock_search_service.delete_triple_from_indices.assert_awaited_once_with(
-        sample_components.urn, "cites", ref_components.urn, "reference"
+        sample_components.uri, "cites", ref_components.uri, "reference"
     )
     
     # Verify the result
@@ -483,15 +483,15 @@ async def test_search_graph_expansion_only(kb_manager):
     # but focus on graph expansion with seed URNs
     results = await kb_manager.search(
         query="*",  # Minimal query to work around validation bug
-        graph_seed_urns=initial_urns,
-        graph_expand_hops=1,
+        seed_uris=initial_urns,
+        expand_hops=1,
     )
     
     # Verify graph expansion was called
     mock_search_service.search.assert_awaited_once_with(
         query="*",
-        graph_seed_urns=initial_urns,
-        graph_expand_hops=1,
+        seed_uris=initial_urns,
+        expand_hops=1,
     )
     
     # Verify results include the expanded neighbors
@@ -524,13 +524,13 @@ async def test_search_contract():
     # Create a mock manager
     mock_manager = MagicMock()
     
-    async def mock_search(query=None, graph_seed_urns=None, graph_expand_hops=0, 
+    async def mock_search(query=None, seed_uris=None, expand_hops=0, 
                          relation_predicates=None, top_k_sparse=50, top_k_rerank=10,
                          filter_urns=None, include_content=False, include_index=False,
                          use_reranker=True, fuzzy_distance=0):
         # Verify at least one search criteria is provided (this is what the validation SHOULD be)
-        if not query and not graph_seed_urns:
-            raise ValueError("Search requires either a query or graph_seed_urns")
+        if not query and not seed_uris:
+            raise ValueError("Search requires either a query or seed_uris")
         
         return []
     
@@ -545,11 +545,11 @@ async def test_search_contract():
     assert isinstance(result, list)
     
     # Test contract with graph seed URNs for graph expansion
-    result = await mock_manager.search(graph_seed_urns=["kb://ns/coll/seed"])
+    result = await mock_manager.search(seed_uris=["kb://ns/coll/seed"])
     assert isinstance(result, list)
     
-    # Test error when neither query nor graph_seed_urns provided
-    with pytest.raises(ValueError, match="Search requires either a query or graph_seed_urns"):
+    # Test error when neither query nor seed_uris provided
+    with pytest.raises(ValueError, match="Search requires either a query or seed_uris"):
         await mock_manager.search()
 
 # --- Test Missing Methods ---
@@ -676,7 +676,7 @@ async def test_move_document(kb_manager, sample_components, sample_index_obj):
     # Verify search index update was attempted (if search is enabled)
     if kb_manager.search_enabled:
         mock_search_service.move_document_in_indices.assert_awaited_once_with(
-            sample_components.urn, new_components.urn, "Test content"
+            sample_components.uri, new_components.uri, "Test content"
         )
 
 @pytest.mark.asyncio
@@ -711,7 +711,7 @@ async def test_archive_document(kb_manager, sample_components, sample_index_obj)
     # Verify search service was called to delete the doc
     if kb_manager.search_enabled:
         mock_search_service.delete_document_from_indices.assert_awaited_once_with(
-            sample_components.urn
+            sample_components.uri
         )
     
     # Verify result
@@ -756,7 +756,7 @@ async def test_add_preference(kb_manager, sample_components, sample_index_obj):
     
     # Verify search call
     mock_search_service.add_triple_to_indices.assert_awaited_once_with(
-        sample_components.urn, "hasTag", "important", "preference"
+        sample_components.uri, "hasTag", "important", "preference"
     )
     
     assert result["status"] == "updated"
@@ -785,7 +785,7 @@ async def test_remove_preference(kb_manager, sample_components, sample_index_obj
     
     # Verify search call
     mock_search_service.delete_triple_from_indices.assert_awaited_once_with(
-        sample_components.urn, "hasTag", "remove_me", "preference"
+        sample_components.uri, "hasTag", "remove_me", "preference"
     )
 
     assert result["status"] == "updated"

@@ -463,8 +463,8 @@ Searches the knowledge base using text queries and/or graph expansion.
 
 - **Parameters**:
   - `query` (string, optional): Text query for semantic search and reranking
-  - `graph_seed_urns` (array, optional): Starting URNs for graph expansion
-  - `graph_expand_hops` (integer, optional): Number of relationship hops to expand (default: 0)
+  - `seed_uris` (array, optional): Starting URIs for graph expansion
+  - `expand_hops` (integer, optional): Number of relationship hops to expand (default: 0)
   - `filter_urns` (array, optional): URNs to exclude from results
   - `relation_predicates` (array, optional): Predicates to follow during graph traversal (default: ["references"])
   - `top_k` (integer, optional): Number of results to return (default: 10)
