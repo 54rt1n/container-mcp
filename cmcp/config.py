@@ -117,6 +117,19 @@ class ListConfig(BaseModel):
     storage_path: str = Field(default=os.path.join(BASE_PATHS["base_dir"], "lists"))
 
 
+class MarketConfig(BaseModel):
+    """Configuration for Market Manager."""
+    timeout_default: int = Field(default=30)
+    timeout_max: int = Field(default=60)
+
+
+class RssConfig(BaseModel):
+    """Configuration for RSS Manager."""
+    timeout_default: int = Field(default=15)
+    timeout_max: int = Field(default=30)
+    user_agent: str = Field(default="container-mcp/1.0")
+
+
 class MCPConfig(BaseModel):
     """MCP Server configuration."""
 
@@ -141,13 +154,17 @@ class AppConfig(BaseModel):
     web_config: WebConfig = Field(default_factory=WebConfig)
     kb_config: KBConfig = Field(default_factory=KBConfig)
     list_config: ListConfig = Field(default_factory=ListConfig)
-    
+    market_config: MarketConfig = Field(default_factory=MarketConfig)
+    rss_config: RssConfig = Field(default_factory=RssConfig)
+
     # Tool Enable/Disable Flags
     tools_enable_system: bool = Field(default=True, description="Enable System tools (bash, python)")
     tools_enable_file: bool = Field(default=True, description="Enable File tools")
     tools_enable_web: bool = Field(default=True, description="Enable Web tools (search, scrape, browse)")
     tools_enable_kb: bool = Field(default=True, description="Enable Knowledge Base tools")
     tools_enable_list: bool = Field(default=True, description="Enable List tools")
+    tools_enable_market: bool = Field(default=True, description="Enable Market tools")
+    tools_enable_rss: bool = Field(default=True, description="Enable RSS tools")
     
     @field_validator("log_level")
     @classmethod
@@ -239,13 +256,30 @@ def load_env_config() -> Dict[str, Any]:
     )
     config["list_config"] = list_config
     
+    # Market config
+    market_config = MarketConfig(
+        timeout_default=int(os.environ.get("MARKET_TIMEOUT_DEFAULT", "30")),
+        timeout_max=int(os.environ.get("MARKET_TIMEOUT_MAX", "60")),
+    )
+    config["market_config"] = market_config
+
+    # RSS config
+    rss_config = RssConfig(
+        timeout_default=int(os.environ.get("RSS_TIMEOUT_DEFAULT", "15")),
+        timeout_max=int(os.environ.get("RSS_TIMEOUT_MAX", "30")),
+        user_agent=os.environ.get("RSS_USER_AGENT", "container-mcp/1.0"),
+    )
+    config["rss_config"] = rss_config
+
     # Tool Enable/Disable Flags - default to true if not set
     config["tools_enable_system"] = os.environ.get("TOOLS_ENABLE_SYSTEM", "true").lower() == "true"
     config["tools_enable_file"] = os.environ.get("TOOLS_ENABLE_FILE", "true").lower() == "true"
     config["tools_enable_web"] = os.environ.get("TOOLS_ENABLE_WEB", "true").lower() == "true"
     config["tools_enable_kb"] = os.environ.get("TOOLS_ENABLE_KB", "true").lower() == "true"
     config["tools_enable_list"] = os.environ.get("TOOLS_ENABLE_LIST", "true").lower() == "true"
-    
+    config["tools_enable_market"] = os.environ.get("TOOLS_ENABLE_MARKET", "true").lower() == "true"
+    config["tools_enable_rss"] = os.environ.get("TOOLS_ENABLE_RSS", "true").lower() == "true"
+
     return config
 
 

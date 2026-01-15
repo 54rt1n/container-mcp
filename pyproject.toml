@@ -47,26 +47,23 @@ dynamic = ["version"]
 dependencies = [
     # MCP SDK
     "mcp[cli]>=1.0.0",
-    
     # Async utilities
     "aiofiles>=0.8.0",
     "asyncio>=3.4.3",
     "aiohttp>=3.8.0",
-    
     # Web capabilities
     "playwright>=1.31.0",
     "beautifulsoup4>=4.11.1",
-    
     # Data handling
     "pydantic>=2.0.0",
     "pyyaml>=6.0",
-    
     # Search capabilities
     "tantivy>=0.24.0",
     "sentence-transformers>=4.0.1",
-    
     # System monitoring
     "psutil>=7.0.0",
+    "yfinance>=1.0",
+    "feedparser>=6.0.12",
 ]
 
 [project.optional-dependencies]

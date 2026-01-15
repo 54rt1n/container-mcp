@@ -13,12 +13,14 @@ from .file import create_file_tools
 from .web import create_web_tools
 from .kb import create_kb_tools
 from .list import create_list_tools
+from .market import create_market_tools
+from .rss import create_rss_tools
 
 logger = logging.getLogger(__name__)
 
-def register_all_tools(mcp, config, bash_manager, python_manager, file_manager, web_manager, kb_manager, list_manager):
+def register_all_tools(mcp, config, bash_manager, python_manager, file_manager, web_manager, kb_manager, list_manager, market_manager, rss_manager):
     """Register tools with the MCP instance based on configuration.
-    
+
     Args:
         mcp: The MCP instance
         config: The application configuration
@@ -28,6 +30,8 @@ def register_all_tools(mcp, config, bash_manager, python_manager, file_manager, 
         web_manager: The web manager instance
         kb_manager: The knowledge base manager instance
         list_manager: The list manager instance
+        market_manager: The market manager instance
+        rss_manager: The RSS manager instance
     """
     logger.info("Registering tools based on configuration...")
     
@@ -65,5 +69,19 @@ def register_all_tools(mcp, config, bash_manager, python_manager, file_manager, 
         logger.info("List tools ENABLED.")
     else:
         logger.warning("List tools DISABLED by configuration.")
-    
+
+    # Market Tools
+    if config.tools_enable_market:
+        create_market_tools(mcp, market_manager)
+        logger.info("Market tools ENABLED.")
+    else:
+        logger.warning("Market tools DISABLED by configuration.")
+
+    # RSS Tools
+    if config.tools_enable_rss:
+        create_rss_tools(mcp, rss_manager)
+        logger.info("RSS tools ENABLED.")
+    else:
+        logger.warning("RSS tools DISABLED by configuration.")
+
     logger.info("Tool registration complete.") 

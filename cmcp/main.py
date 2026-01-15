@@ -48,6 +48,7 @@ if not (os.path.exists('/.dockerenv') or os.path.exists('/run/.containerenv')):
     os.makedirs(os.environ["TEMP_DIR"], exist_ok=True)
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -59,7 +60,9 @@ from cmcp.managers import (
     FileManager,
     WebManager,
     KnowledgeBaseManager,
-    ListManager
+    ListManager,
+    MarketManager,
+    RssManager
 )
 from cmcp.utils.logging import setup_logging
 from cmcp.tools import register_all_tools
@@ -100,8 +103,29 @@ class ContainerMCP(FastMCP):
         
         return app
 
+# Configure transport security for container deployment
+# Containers are accessed via various IPs/hostnames, so we need flexible host validation
+_allowed_hosts = os.environ.get("MCP_ALLOWED_HOSTS", "").split(",") if os.environ.get("MCP_ALLOWED_HOSTS") else []
+_allowed_hosts = [h.strip() for h in _allowed_hosts if h.strip()]
+
+# Default: allow localhost variants. In container mode, disable protection since we bind to 0.0.0.0
+_is_container = os.path.exists('/.dockerenv') or os.path.exists('/run/.containerenv')
+if _is_container and not _allowed_hosts:
+    # Container mode: disable DNS rebinding protection (container is meant to be accessed externally)
+    _transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+elif _allowed_hosts:
+    # Custom allowed hosts specified
+    _transport_security = TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=_allowed_hosts + ["127.0.0.1:*", "localhost:*", "[::1]:*"],
+        allowed_origins=[f"http://{h}" for h in _allowed_hosts] + ["http://127.0.0.1:*", "http://localhost:*"]
+    )
+else:
+    # Local development: use defaults
+    _transport_security = None
+
 # Initialize the MCP server
-mcp = ContainerMCP("Container-MCP")
+mcp = ContainerMCP("Container-MCP", transport_security=_transport_security)
 
 # Load configuration
 config = load_config()
@@ -113,6 +137,8 @@ file_manager = FileManager.from_env(config)
 web_manager = WebManager.from_env(config)
 kb_manager = KnowledgeBaseManager.from_env(config)
 list_manager = ListManager.from_env(config)
+market_manager = MarketManager.from_env(config)
+rss_manager = RssManager.from_env(config)
 
 # Set up logging
 log_file = os.path.join("logs", "cmcp.log") if os.path.exists("logs") else None
@@ -160,10 +186,12 @@ async def health_check() -> dict:
         },
         "managers": {
             "bash": "enabled" if config.tools_enable_system else "disabled",
-            "python": "enabled" if config.tools_enable_system else "disabled", 
+            "python": "enabled" if config.tools_enable_system else "disabled",
             "file": "enabled" if config.tools_enable_file else "disabled",
             "web": "enabled" if config.tools_enable_web else "disabled",
             "kb": "enabled" if config.tools_enable_kb else "disabled",
+            "market": "enabled" if config.tools_enable_market else "disabled",
+            "rss": "enabled" if config.tools_enable_rss else "disabled",
         }
     }
     
@@ -178,7 +206,9 @@ register_all_tools(
     file_manager,
     web_manager,
     kb_manager,
-    list_manager
+    list_manager,
+    market_manager,
+    rss_manager
 )
 
 if __name__ == "__main__":

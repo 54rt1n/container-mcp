@@ -80,8 +80,19 @@ def test_config() -> AppConfig:
             # --- Add List Config ---
             "list_config": {
                 "storage_path": os.path.join(temp_base_dir, "lists")
-            }
+            },
             # --- End List Config ---
+            # Market config
+            "market_config": {
+                "timeout_default": 5,
+                "timeout_max": 10
+            },
+            # RSS config
+            "rss_config": {
+                "timeout_default": 5,
+                "timeout_max": 10,
+                "user_agent": "test-agent/1.0"
+            }
         }
 
         # Create config object
@@ -182,10 +193,35 @@ async def kb_manager(test_config):
     """Create a KnowledgeBaseManager instance for tests."""
     # Import here to avoid circular imports
     from cmcp.managers import KnowledgeBaseManager
-    
+
     # Create manager
     manager = KnowledgeBaseManager.from_env(test_config)
     # Initialize the manager
     await manager.initialize()
-    
-    yield manager 
+
+    yield manager
+
+
+@pytest.fixture
+def market_manager(test_config):
+    """Create a MarketManager instance for tests."""
+    from cmcp.managers.market_manager import MarketManager
+
+    manager = MarketManager(
+        timeout_default=test_config.market_config.timeout_default,
+        timeout_max=test_config.market_config.timeout_max
+    )
+    yield manager
+
+
+@pytest.fixture
+def rss_manager(test_config):
+    """Create an RssManager instance for tests."""
+    from cmcp.managers.rss_manager import RssManager
+
+    manager = RssManager(
+        timeout_default=test_config.rss_config.timeout_default,
+        timeout_max=test_config.rss_config.timeout_max,
+        user_agent=test_config.rss_config.user_agent
+    )
+    yield manager
