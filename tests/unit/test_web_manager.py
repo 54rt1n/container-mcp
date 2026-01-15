@@ -384,10 +384,74 @@ async def test_from_env_initialization(test_config):
     try:
         # Initialize from environment
         manager = WebManager.from_env()
-        
+
         # Verify the manager was initialized correctly
         assert manager.timeout_default == test_config.web_config.timeout_default
         assert manager.allowed_domains == test_config.web_config.allowed_domains
     finally:
         # Restore the original function
-        cmcp.config.load_config = original_load_config 
+        cmcp.config.load_config = original_load_config
+
+
+@pytest.mark.asyncio
+async def test_decode_response_fallback_encoding(web_manager):
+    """Test that _decode_response handles non-UTF-8 content gracefully."""
+    # Content with Latin-1 encoded character (middle dot · = 0xb7)
+    latin1_bytes = b"Hello \xb7 World"  # 0xb7 is middle dot in Latin-1
+
+    # Mock response where text() raises UnicodeDecodeError
+    mock_response = AsyncMock()
+    mock_response.text = AsyncMock(side_effect=UnicodeDecodeError(
+        'utf-8', latin1_bytes, 6, 7, 'invalid start byte'
+    ))
+    mock_response.read = AsyncMock(return_value=latin1_bytes)
+    mock_response.url = "https://example.com/test"
+
+    # Call _decode_response
+    result = await web_manager._decode_response(mock_response)
+
+    # Verify the content was decoded using fallback encoding
+    assert "Hello" in result
+    assert "World" in result
+    # The middle dot should be present (decoded from Latin-1)
+    assert "·" in result or "\xb7" in result
+
+
+@pytest.mark.asyncio
+async def test_scrape_webpage_non_utf8_content(web_manager):
+    """Test scraping a webpage with non-UTF-8 content."""
+    # HTML with Latin-1 encoded character
+    latin1_html = b"""
+    <html>
+        <head><title>Test Page</title></head>
+        <body>
+            <div class="content">Price: 10\xb750</div>
+        </body>
+    </html>
+    """
+
+    # Mock response where text() raises UnicodeDecodeError, but read() works
+    mock_response = AsyncMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.text = AsyncMock(side_effect=UnicodeDecodeError(
+        'utf-8', latin1_html, 100, 101, 'invalid start byte'
+    ))
+    mock_response.read = AsyncMock(return_value=latin1_html)
+    mock_response.url = "https://example.com/test"
+
+    # Create a context manager mock
+    mock_context = AsyncMock()
+    mock_context.__aenter__.return_value = mock_response
+    mock_context.__aexit__ = AsyncMock(return_value=None)
+
+    # Create a session mock
+    mock_session = AsyncMock()
+    mock_session.get = MagicMock(return_value=mock_context)
+
+    # Scrape the page
+    result = await web_manager.scrape_webpage("https://example.com/test", session=mock_session)
+
+    # Verify the content was scraped successfully despite encoding issues
+    assert result.success is True
+    assert "Price" in result.content
+    assert result.title == "Test Page"

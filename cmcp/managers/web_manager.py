@@ -212,14 +212,44 @@ class WebManager:
                 error=f"Unexpected browsing error: {str(e)}"
             )
     
+    async def _decode_response(self, response: aiohttp.ClientResponse) -> str:
+        """Decode response content with fallback encoding handling.
+
+        Args:
+            response: aiohttp ClientResponse object
+
+        Returns:
+            Decoded HTML content as string
+        """
+        # First try using the encoding from Content-Type header (aiohttp default)
+        try:
+            return await response.text()
+        except UnicodeDecodeError:
+            pass
+
+        # Read raw bytes for fallback decoding
+        raw_bytes = await response.read()
+
+        # Try common encodings in order of preference
+        encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
+        for encoding in encodings:
+            try:
+                return raw_bytes.decode(encoding)
+            except (UnicodeDecodeError, LookupError):
+                continue
+
+        # Last resort: decode with replacement characters
+        logger.warning(f"Could not decode response from {response.url}, using replacement characters")
+        return raw_bytes.decode('utf-8', errors='replace')
+
     async def _fetch_html(self, url: str, timeout: Optional[int] = None, session: Optional[aiohttp.ClientSession] = None) -> Dict[str, Any]:
         """Fetch HTML content from a URL.
-        
+
         Args:
             url: URL to fetch
             timeout: Optional timeout in seconds
             session: Optional existing session to use
-            
+
         Returns:
             Dictionary with response data or error
         """
@@ -229,20 +259,20 @@ class WebManager:
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.5",
         }
-        
+
         try:
             # Validate URL
             self._validate_url(url)
-            
+
             logger.debug(f"Fetching HTML from: {url}")
-            
+
             # Use provided session or create a new one
             if session:
                 # Use provided session (could be a mock in tests)
                 try:
                     async with session.get(url, timeout=request_timeout, allow_redirects=True, headers=headers) as response:
                         response.raise_for_status()
-                        html_content = await response.text()
+                        html_content = await self._decode_response(response)
                         final_url = str(response.url)
                         return {
                             "html": html_content,
@@ -261,7 +291,7 @@ class WebManager:
                 async with aiohttp.ClientSession(headers=headers) as new_session:
                     async with new_session.get(url, timeout=request_timeout, allow_redirects=True) as response:
                         response.raise_for_status()
-                        html_content = await response.text()
+                        html_content = await self._decode_response(response)
                         final_url = str(response.url)
                         return {
                             "html": html_content,
