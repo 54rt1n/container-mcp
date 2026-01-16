@@ -57,12 +57,23 @@ class MarketManager:
             timeout_max=config.market_config.timeout_max
         )
 
+    def _normalize_symbol(self, symbol: str) -> str:
+        """Normalize symbol to Yahoo Finance format.
+
+        Converts forex pairs like USD/ZAR to USDZAR=X format.
+        """
+        if "/" in symbol:
+            # Forex pair: USD/ZAR -> USDZAR=X
+            return symbol.replace("/", "") + "=X"
+        return symbol
+
     async def query(self, symbol: str, period: str = "1d") -> MarketResult:
         """Query stock/crypto price via yfinance."""
         timeout = min(self.timeout_default, self.timeout_max)
+        yf_symbol = self._normalize_symbol(symbol)
 
         def _fetch():
-            ticker = yf.Ticker(symbol)
+            ticker = yf.Ticker(yf_symbol)
             return ticker.info
 
         try:

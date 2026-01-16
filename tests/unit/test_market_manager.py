@@ -148,3 +148,38 @@ class TestMarketManager:
         assert result.volume == 0  # Should default to 0
         assert result.market_cap == 0  # Should default to 0
         assert result.currency == "USD"  # Should default to USD
+
+    def test_normalize_symbol_stock(self, market_manager):
+        """Test symbol normalization for regular stock symbols."""
+        assert market_manager._normalize_symbol("AAPL") == "AAPL"
+        assert market_manager._normalize_symbol("MSFT") == "MSFT"
+
+    def test_normalize_symbol_forex(self, market_manager):
+        """Test symbol normalization for forex pairs with slash."""
+        assert market_manager._normalize_symbol("USD/ZAR") == "USDZAR=X"
+        assert market_manager._normalize_symbol("EUR/USD") == "EURUSD=X"
+        assert market_manager._normalize_symbol("GBP/JPY") == "GBPJPY=X"
+
+    @pytest.mark.asyncio
+    @patch('cmcp.managers.market_manager.yf')
+    async def test_query_forex_pair(self, mock_yf, market_manager):
+        """Test querying forex pair converts symbol correctly."""
+        mock_ticker = MagicMock()
+        mock_ticker.info = {
+            "shortName": "USD/ZAR",
+            "regularMarketPrice": 18.52,
+            "regularMarketChange": 0.05,
+            "regularMarketChangePercent": 0.27,
+            "regularMarketVolume": 0,
+            "marketCap": 0,
+            "currency": "ZAR"
+        }
+        mock_yf.Ticker.return_value = mock_ticker
+
+        result = await market_manager.query("USD/ZAR")
+
+        # Verify yfinance was called with normalized symbol
+        mock_yf.Ticker.assert_called_once_with("USDZAR=X")
+        assert result.success is True
+        assert result.symbol == "USD/ZAR"  # Original symbol preserved in result
+        assert result.price == 18.52
