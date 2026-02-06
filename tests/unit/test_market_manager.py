@@ -3,6 +3,7 @@
 
 """Unit tests for MarketManager."""
 
+import pandas as pd
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -32,6 +33,8 @@ class TestMarketManager:
             "marketCap": 2800000000000,
             "currency": "USD"
         }
+        mock_ticker.history.return_value = pd.DataFrame()
+        mock_ticker.news = []
         mock_yf.Ticker.return_value = mock_ticker
 
         result = await market_manager.query("AAPL")
@@ -49,6 +52,8 @@ class TestMarketManager:
         """Test querying an invalid symbol."""
         mock_ticker = MagicMock()
         mock_ticker.info = {}
+        mock_ticker.history.return_value = pd.DataFrame()
+        mock_ticker.news = []
         mock_yf.Ticker.return_value = mock_ticker
 
         result = await market_manager.query("INVALID123")
@@ -105,6 +110,8 @@ class TestMarketManager:
         """Test querying with empty symbol."""
         mock_ticker = MagicMock()
         mock_ticker.info = {}
+        mock_ticker.history.return_value = pd.DataFrame()
+        mock_ticker.news = []
         mock_yf.Ticker.return_value = mock_ticker
 
         result = await market_manager.query("")
@@ -121,6 +128,8 @@ class TestMarketManager:
             "shortName": "Test Company",
             "regularMarketPrice": None  # Null price
         }
+        mock_ticker.history.return_value = pd.DataFrame()
+        mock_ticker.news = []
         mock_yf.Ticker.return_value = mock_ticker
 
         result = await market_manager.query("TEST")
@@ -137,6 +146,8 @@ class TestMarketManager:
             "regularMarketPrice": 50.0,
             # Missing: shortName, change, volume, marketCap, currency
         }
+        mock_ticker.history.return_value = pd.DataFrame()
+        mock_ticker.news = []
         mock_yf.Ticker.return_value = mock_ticker
 
         result = await market_manager.query("TEST")
@@ -174,6 +185,8 @@ class TestMarketManager:
             "marketCap": 0,
             "currency": "ZAR"
         }
+        mock_ticker.history.return_value = pd.DataFrame()
+        mock_ticker.news = []
         mock_yf.Ticker.return_value = mock_ticker
 
         result = await market_manager.query("USD/ZAR")
@@ -183,3 +196,49 @@ class TestMarketManager:
         assert result.success is True
         assert result.symbol == "USD/ZAR"  # Original symbol preserved in result
         assert result.price == 18.52
+
+    @pytest.mark.asyncio
+    @patch('cmcp.managers.market_manager.yf')
+    async def test_query_trend_and_news(self, mock_yf, market_manager):
+        """Test trend metrics and news shaping."""
+        mock_ticker = MagicMock()
+        mock_ticker.info = {
+            "shortName": "Test Co",
+            "regularMarketPrice": 120.0,
+            "regularMarketChange": 1.5,
+            "regularMarketChangePercent": 1.27,
+            "regularMarketVolume": 1200000,
+            "marketCap": 5000000000,
+            "currency": "USD",
+            "trailingEps": 5.5,
+            "trailingPE": 22.0,
+            "dividendYield": 0.015,
+            "profitMargins": 0.23,
+            "earningsQuarterlyGrowth": 0.12,
+        }
+        dates = pd.bdate_range(end="2024-01-31", periods=260)
+        close = pd.Series(range(100, 360), index=dates)
+        history = pd.DataFrame({
+            "Close": close,
+            "High": close + 1,
+            "Low": close - 1,
+        })
+        mock_ticker.history.return_value = history
+        mock_ticker.news = [
+            {"title": f"Story {i}", "link": f"https://example.com/{i}", "providerPublishTime": 1700000000}
+            for i in range(6)
+        ]
+        mock_yf.Ticker.return_value = mock_ticker
+
+        result = await market_manager.query("TEST")
+
+        assert result.success is True
+        assert result.fundamentals["trailing_eps"] == 5.5
+        assert result.fundamentals["dividend_yield"] == 1.5
+        assert len(result.news) == 5
+        assert result.trend["ma20"] is not None
+        assert result.trend["ma50"] is not None
+        assert result.trend["ma200"] is not None
+        assert result.trend["range_52w_low"] is not None
+        assert result.trend["range_52w_high"] is not None
+        assert len(result.trend["last_week"]) == 5

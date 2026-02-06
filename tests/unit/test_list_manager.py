@@ -539,4 +539,216 @@ async def test_multiple_item_operations(list_manager):
     assert result["items"][0]["text"] == "Task 2"
     assert result["items"][0]["status"] == "DONE"
     assert result["items"][1]["text"] == "Task 3"
-    assert result["items"][1]["status"] == "TODO" 
+    assert result["items"][1]["status"] == "TODO"
+
+
+# Properties Tests
+
+@pytest.mark.asyncio
+async def test_add_item_with_properties(list_manager):
+    """Test adding an item with custom properties."""
+    await list_manager.create_list("props-test", "Properties Test List")
+
+    # Add item with properties
+    result = await list_manager.add_item(
+        list_name="props-test",
+        item_text="Task with properties",
+        status="TODO",
+        tags=["important"],
+        properties={"priority": 1, "assignee": "john", "nested": {"key": "value"}}
+    )
+
+    assert result["success"] is True
+    assert result["item"]["properties"] == {"priority": 1, "assignee": "john", "nested": {"key": "value"}}
+
+    # Verify properties persist when reading list
+    list_info = await list_manager.get_list("props-test")
+    assert list_info["items"][0]["properties"] == {"priority": 1, "assignee": "john", "nested": {"key": "value"}}
+
+
+@pytest.mark.asyncio
+async def test_update_item_properties_merge(list_manager):
+    """Test that item properties updates use merge semantics."""
+    await list_manager.create_list("merge-test", "Merge Test List")
+
+    # Add item with initial properties
+    await list_manager.add_item(
+        "merge-test",
+        "Task",
+        properties={"priority": 1, "assignee": "john", "tags_custom": ["a", "b"]}
+    )
+
+    # Update with partial properties - should merge
+    result = await list_manager.update_item(
+        list_name="merge-test",
+        item_index=0,
+        new_properties={"priority": 2, "status_note": "in progress"}
+    )
+
+    assert result["success"] is True
+    expected_properties = {
+        "priority": 2,  # Updated
+        "assignee": "john",  # Preserved
+        "tags_custom": ["a", "b"],  # Preserved
+        "status_note": "in progress"  # Added
+    }
+    assert result["item"]["properties"] == expected_properties
+
+
+@pytest.mark.asyncio
+async def test_item_properties_backward_compatibility(list_manager):
+    """Test that items without properties field work correctly."""
+    # Create list and add item without properties
+    await list_manager.create_list("compat-test", "Compatibility Test")
+    await list_manager.add_item("compat-test", "Old style item", "TODO")
+
+    # Get list - should have empty properties dict
+    result = await list_manager.get_list("compat-test")
+    assert result["success"] is True
+    assert result["items"][0]["properties"] == {}
+
+    # Update item should work
+    update_result = await list_manager.update_item(
+        "compat-test",
+        0,
+        new_properties={"new_key": "new_value"}
+    )
+    assert update_result["success"] is True
+    assert update_result["item"]["properties"] == {"new_key": "new_value"}
+
+
+@pytest.mark.asyncio
+async def test_item_properties_json_serialization_roundtrip(list_manager):
+    """Test that complex properties survive org-mode serialization."""
+    await list_manager.create_list("json-test", "JSON Test")
+
+    complex_properties = {
+        "string": "value",
+        "number": 42,
+        "float": 3.14,
+        "boolean": True,
+        "array": [1, 2, 3],
+        "nested": {
+            "deep": {
+                "key": "value"
+            }
+        },
+        "unicode": "Hello 世界 🌍"
+    }
+
+    await list_manager.add_item(
+        "json-test",
+        "Complex item",
+        properties=complex_properties
+    )
+
+    # Read back
+    result = await list_manager.get_list("json-test")
+    assert result["success"] is True
+    assert result["items"][0]["properties"] == complex_properties
+
+
+@pytest.mark.asyncio
+async def test_item_properties_removal_via_none(list_manager):
+    """Test removing properties keys by setting to None."""
+    await list_manager.create_list("remove-test", "Remove Test")
+
+    # Add item with properties
+    await list_manager.add_item(
+        "remove-test",
+        "Task",
+        properties={"key1": "value1", "key2": "value2", "key3": "value3"}
+    )
+
+    # Remove key2 by setting to None
+    result = await list_manager.update_item(
+        "remove-test",
+        0,
+        new_properties={"key2": None, "key4": "value4"}
+    )
+
+    assert result["success"] is True
+    expected = {"key1": "value1", "key3": "value3", "key4": "value4"}
+    assert result["item"]["properties"] == expected
+
+
+@pytest.mark.asyncio
+async def test_create_list_with_properties(list_manager):
+    """Test creating a list with custom properties."""
+    result = await list_manager.create_list(
+        name="list-props-test",
+        title="List with Properties",
+        list_type="todo",
+        description="Test list",
+        properties={"project_id": "proj-123", "team": "backend"}
+    )
+
+    assert result["success"] is True
+    assert result["metadata"]["properties"] == {"project_id": "proj-123", "team": "backend"}
+
+    # Verify properties persist
+    list_info = await list_manager.get_list("list-props-test")
+    assert list_info["metadata"]["properties"] == {"project_id": "proj-123", "team": "backend"}
+
+
+@pytest.mark.asyncio
+async def test_update_list_properties(list_manager):
+    """Test updating list properties via update_list()."""
+    # Create list without properties
+    await list_manager.create_list("update-list-test", "Update List Test")
+
+    # Update with properties
+    result = await list_manager.update_list(
+        list_name="update-list-test",
+        new_description="Updated description",
+        new_properties={"sprint": 5, "team": "frontend"}
+    )
+
+    assert result["success"] is True
+    assert result["metadata"]["description"] == "Updated description"
+    assert result["metadata"]["properties"] == {"sprint": 5, "team": "frontend"}
+
+
+@pytest.mark.asyncio
+async def test_update_list_properties_merge(list_manager):
+    """Test that list properties updates use merge semantics."""
+    # Create list with initial properties
+    await list_manager.create_list(
+        "merge-list-test",
+        "Merge List Test",
+        properties={"project_id": "proj-123", "team": "backend"}
+    )
+
+    # Update with additional properties - should merge
+    result = await list_manager.update_list(
+        list_name="merge-list-test",
+        new_properties={"sprint": 5, "team": "frontend"}  # team updated
+    )
+
+    assert result["success"] is True
+    expected_properties = {
+        "project_id": "proj-123",  # Preserved
+        "team": "frontend",  # Updated
+        "sprint": 5  # Added
+    }
+    assert result["metadata"]["properties"] == expected_properties
+
+
+@pytest.mark.asyncio
+async def test_list_properties_backward_compatibility(list_manager):
+    """Test that lists without properties field work correctly."""
+    # Create list without properties
+    await list_manager.create_list("list-compat-test", "List Compat Test")
+
+    # Get list - should have empty properties dict
+    result = await list_manager.get_list("list-compat-test")
+    assert result["success"] is True
+    assert result["metadata"]["properties"] == {}
+
+    # Update list should work
+    update_result = await list_manager.update_list(
+        "list-compat-test",
+        new_properties={"new_key": "new_value"}
+    )
+    assert update_result["success"] is True
+    assert update_result["metadata"]["properties"] == {"new_key": "new_value"}
