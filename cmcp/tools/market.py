@@ -22,12 +22,19 @@ def create_market_tools(mcp: FastMCP, market_manager: MarketManager) -> None:
     """
 
     @mcp.tool()
-    async def market_query(symbol: str, period: str = "1d") -> Dict[str, Any]:
+    async def market_query(
+        symbol: str,
+        period: str = "1y",
+        interval: str = "1d",
+        news_count: int = 5
+    ) -> Dict[str, Any]:
         """Query stock or cryptocurrency prices using Yahoo Finance.
 
         Args:
             symbol: Stock/crypto symbol (e.g., "AAPL", "BTC-USD", "TSLA")
-            period: Historical period - "1d", "5d", "1mo", "3mo", "1y" (default: "1d")
+            period: Historical period for trend metrics (default: "1y")
+            interval: Historical interval (default: "1d")
+            news_count: Number of recent news items to return (default: 5)
 
         Returns:
             Dict with price data including symbol, name, price, change, volume, etc.
@@ -40,7 +47,7 @@ def create_market_tools(mcp: FastMCP, market_manager: MarketManager) -> None:
         Request: {"name": "market_query", "parameters": {"symbol": "BTC-USD"}}
         Response: {"symbol": "BTC-USD", "name": "Bitcoin USD", "price": 43250.00, "change": 1250.00, "change_percent": 2.98, "volume": 28500000000, "market_cap": 847000000000, "currency": "USD", "timestamp": "2024-01-15T16:00:00Z", "success": true, "error": null}
         """
-        result = await market_manager.query(symbol, period)
+        result = await market_manager.query(symbol, period, interval, news_count)
         return {
             "symbol": result.symbol,
             "name": result.name,
@@ -51,6 +58,9 @@ def create_market_tools(mcp: FastMCP, market_manager: MarketManager) -> None:
             "market_cap": result.market_cap,
             "currency": result.currency,
             "timestamp": result.timestamp,
+            "fundamentals": result.fundamentals,
+            "news": result.news,
+            "trend": result.trend,
             "success": result.success,
             "error": result.error
         }

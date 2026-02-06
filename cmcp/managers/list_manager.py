@@ -5,10 +5,13 @@
 
 import os
 import re
+import json
 from datetime import datetime
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple, Set
 from pathlib import Path
+
+from pydantic import BaseModel
 
 from cmcp.utils.logging import get_logger
 from cmcp.managers.file_manager import FileManager
@@ -17,41 +20,33 @@ from cmcp.utils.io import read_file, write_file, list_directory, delete_file
 logger = get_logger(__name__)
 
 
-@dataclass
-class ListItem:
+class ListItem(BaseModel):
     """Represents a single item in a list."""
-    
+
     text: str
     status: str = "TODO"  # TODO, DONE, WAITING, CANCELLED, NEXT, SOMEDAY
     index: int = 0
-    tags: List[str] = field(default_factory=list)
+    tags: List[str] = []
     created: Optional[str] = None  # Track when item was added
     completed: Optional[str] = None  # Track when item was marked DONE
+    properties: Dict[str, Any] = {}  # Custom user-defined properties
 
 
-@dataclass
-class ListMetadata:
+class ListMetadata(BaseModel):
     """Metadata for a list."""
-    
+
     title: str
     type: str = "todo"
     created: str = ""
     modified: str = ""
-    tags: List[str] = field(default_factory=list)
+    tags: List[str] = []
     description: str = ""
     author: str = ""  # Who created the list
-    
+    properties: Dict[str, Any] = {}  # Custom user-defined properties
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert metadata to dictionary."""
-        return {
-            "title": self.title,
-            "type": self.type,
-            "created": self.created,
-            "modified": self.modified,
-            "tags": self.tags,
-            "description": self.description,
-            "author": self.author
-        }
+        return self.model_dump()
 
 
 @dataclass
@@ -177,7 +172,14 @@ class ListManager:
                 metadata.description = line[14:].strip()
             elif line.startswith('#+AUTHOR:'):
                 metadata.author = line[9:].strip()
-        
+            elif line.startswith('#+PROPERTIES:'):
+                properties_json = line[13:].strip()
+                try:
+                    metadata.properties = json.loads(properties_json)
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse list properties JSON")
+                    metadata.properties = {}
+
         # Parse items (look for * TODO, * DONE, etc.)
         item_index = 0
         for i, line in enumerate(lines):
@@ -197,23 +199,34 @@ class ListManager:
                     tags = [tag for tag in tag_string.split(':') if tag]
                     item_text = re.sub(r'\s+:[\w:]+:$', '', item_text)
                 
-                # Look for metadata in following lines
+                # Look for properties in following lines
                 created = None
                 completed = None
+                item_properties = {}
                 if i + 1 < len(lines):
-                    next_line = lines[i + 1].strip()
-                    if next_line.startswith('CREATED:'):
-                        created = next_line[8:].strip()
-                    elif next_line.startswith('COMPLETED:'):
-                        completed = next_line[10:].strip()
-                
+                    # Check up to 4 lines ahead for CREATED/COMPLETED/PROPERTIES
+                    for offset in range(1, min(5, len(lines) - i)):
+                        next_line = lines[i + offset].strip()
+                        if next_line.startswith('CREATED:'):
+                            created = next_line[8:].strip()
+                        elif next_line.startswith('COMPLETED:'):
+                            completed = next_line[10:].strip()
+                        elif next_line.startswith('PROPERTIES:'):
+                            properties_json = next_line[11:].strip()
+                            try:
+                                item_properties = json.loads(properties_json)
+                            except json.JSONDecodeError:
+                                logger.warning(f"Failed to parse properties JSON for item: {item_text}")
+                                item_properties = {}
+
                 items.append(ListItem(
                     text=item_text,
                     status=status,
                     index=item_index,
                     tags=tags,
                     created=created,
-                    completed=completed
+                    completed=completed,
+                    properties=item_properties
                 ))
                 item_index += 1
         
@@ -239,10 +252,14 @@ class ListManager:
         
         if metadata.tags:
             content_lines.append(f"#+TAGS: {' '.join(metadata.tags)}")
-        
+
+        if metadata.properties:
+            properties_json = json.dumps(metadata.properties, ensure_ascii=False, separators=(',', ':'))
+            content_lines.append(f"#+PROPERTIES: {properties_json}")
+
         if metadata.description:
             content_lines.append(f"#+DESCRIPTION: {metadata.description}")
-            
+
         if metadata.author:
             content_lines.append(f"#+AUTHOR: {metadata.author}")
         
@@ -259,6 +276,9 @@ class ListManager:
                 # Add item metadata
                 if item.created:
                     content_lines.append(f"  CREATED: {item.created}")
+                if item.properties:
+                    properties_json = json.dumps(item.properties, ensure_ascii=False, separators=(',', ':'))
+                    content_lines.append(f"  PROPERTIES: {properties_json}")
                 if item.completed:
                     content_lines.append(f"  COMPLETED: {item.completed}")
         else:
@@ -266,12 +286,13 @@ class ListManager:
         
         return '\n'.join(content_lines)
     
-    async def create_list(self, name: str, title: Optional[str] = None, 
-                         list_type: str = "todo", description: str = "", 
+    async def create_list(self, name: str, title: Optional[str] = None,
+                         list_type: str = "todo", description: str = "",
                          tags: Optional[List[str]] = None,
-                         author: str = "") -> Dict[str, Any]:
+                         author: str = "",
+                         properties: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Create a new list.
-        
+
         Args:
             name: Internal name for the list (used for filename)
             title: Display title for the list
@@ -279,7 +300,8 @@ class ListManager:
             description: Optional description
             tags: Optional list of tags
             author: Optional author name
-            
+            properties: Optional custom properties
+
         Returns:
             Dictionary with creation result
         """
@@ -309,7 +331,8 @@ class ListManager:
                 modified=now,
                 description=description,
                 tags=tags or [],
-                author=author
+                author=author,
+                properties=properties or {}
             )
             
             # Generate org content
@@ -386,7 +409,8 @@ class ListManager:
             "index": item.index,
             "tags": item.tags,
             "created": item.created,
-            "completed": item.completed
+            "completed": item.completed,
+            "properties": item.properties
         }
     
     async def list_all_lists(self, include_statistics: bool = False) -> Dict[str, Any]:
@@ -455,16 +479,18 @@ class ListManager:
                 "count": 0
             }
     
-    async def add_item(self, list_name: str, item_text: str, 
-                      status: str = "TODO", tags: Optional[List[str]] = None) -> Dict[str, Any]:
+    async def add_item(self, list_name: str, item_text: str,
+                      status: str = "TODO", tags: Optional[List[str]] = None,
+                      properties: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Add an item to a list.
-        
+
         Args:
             list_name: Name of the list
             item_text: Text of the item
             status: Status of the item (TODO, DONE, etc.)
             tags: Optional tags for the item
-            
+            properties: Optional custom properties
+
         Returns:
             Dictionary with operation result
         """
@@ -494,7 +520,8 @@ class ListManager:
                 index=len(items),
                 tags=tags or [],
                 created=now,
-                completed=now if status == "DONE" else None
+                completed=now if status == "DONE" else None,
+                properties=properties or {}
             )
             items.append(new_item)
             
@@ -523,19 +550,21 @@ class ListManager:
                 "error": str(e)
             }
     
-    async def update_item(self, list_name: str, item_index: int, 
-                         new_text: Optional[str] = None, 
+    async def update_item(self, list_name: str, item_index: int,
+                         new_text: Optional[str] = None,
                          new_status: Optional[str] = None,
-                         new_tags: Optional[List[str]] = None) -> Dict[str, Any]:
+                         new_tags: Optional[List[str]] = None,
+                         new_properties: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Update an item in a list.
-        
+
         Args:
             list_name: Name of the list
             item_index: Index of the item to update
             new_text: New text for the item
             new_status: New status for the item
             new_tags: New tags for the item
-            
+            new_properties: New properties (merged with existing)
+
         Returns:
             Dictionary with operation result
         """
@@ -576,7 +605,12 @@ class ListManager:
                     item.completed = None
             if new_tags is not None:
                 item.tags = new_tags
-            
+            if new_properties is not None:
+                # Merge properties: update existing keys, preserve others
+                item.properties.update(new_properties)
+                # Remove keys set to None
+                item.properties = {k: v for k, v in item.properties.items() if v is not None}
+
             # Update modification time
             metadata.modified = now
             
@@ -712,7 +746,81 @@ class ListManager:
                 "success": False,
                 "error": str(e)
             }
-    
+
+    async def update_list(self, list_name: str,
+                         new_title: Optional[str] = None,
+                         new_type: Optional[str] = None,
+                         new_description: Optional[str] = None,
+                         new_tags: Optional[List[str]] = None,
+                         new_author: Optional[str] = None,
+                         new_properties: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Update list properties and metadata.
+
+        Args:
+            list_name: Name of the list to update
+            new_title: New title for the list
+            new_type: New type for the list
+            new_description: New description
+            new_tags: New tags (replaces existing)
+            new_author: New author
+            new_properties: Custom properties updates (merged with existing)
+
+        Returns:
+            Dictionary with operation result
+        """
+        try:
+            # Get current list
+            list_path = self._get_list_path(list_name)
+            content, _ = await read_file(list_path)
+            metadata, items = self._parse_org_content(content)
+
+            # Update fields if provided
+            if new_title is not None:
+                metadata.title = new_title
+            if new_type is not None:
+                if new_type not in self.DEFAULT_LIST_TYPES:
+                    logger.warning(f"Non-standard list type '{new_type}' used")
+                metadata.type = new_type
+            if new_description is not None:
+                metadata.description = new_description
+            if new_tags is not None:
+                metadata.tags = new_tags
+            if new_author is not None:
+                metadata.author = new_author
+            if new_properties is not None:
+                # Merge properties: update existing keys, preserve others
+                metadata.properties.update(new_properties)
+                # Remove keys set to None
+                metadata.properties = {k: v for k, v in metadata.properties.items() if v is not None}
+
+            # Update modification time
+            metadata.modified = datetime.now().isoformat()
+
+            # Generate updated content
+            updated_content = self._generate_org_content(metadata, items)
+
+            # Write back to file
+            await write_file(list_path, updated_content)
+
+            logger.info(f"Updated list '{list_name}'")
+            return {
+                "success": True,
+                "name": list_name,
+                "metadata": metadata.to_dict()
+            }
+
+        except FileNotFoundError:
+            return {
+                "success": False,
+                "error": f"List '{list_name}' not found"
+            }
+        except Exception as e:
+            logger.error(f"Error updating list '{list_name}': {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
     async def search_items(self, query: str, list_names: Optional[List[str]] = None,
                           search_in: List[str] = ["text"], 
                           case_sensitive: bool = False) -> Dict[str, Any]:

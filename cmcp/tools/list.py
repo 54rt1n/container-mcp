@@ -21,23 +21,24 @@ def create_list_tools(mcp: FastMCP, list_manager: ListManager) -> None:
     
     @mcp.tool()
     async def list_create(
-        name: str, 
-        title: Optional[str] = None, 
-        list_type: str = "todo", 
-        description: str = "", 
-        tags: Optional[List[str]] = None
+        name: str,
+        title: Optional[str] = None,
+        list_type: str = "todo",
+        description: str = "",
+        tags: Optional[List[str]] = None,
+        properties: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Create a new organized list for tasks, notes, shopping, or any collection.
-        
-        This tool creates org-mode based lists that support various item statuses 
-        (TODO, DONE, WAITING, etc.) and can be tagged for organization. Perfect for 
+
+        This tool creates org-mode based lists that support various item statuses
+        (TODO, DONE, WAITING, etc.) and can be tagged for organization. Perfect for
         project management, shopping lists, or general note-taking.
-        
+
         Examples:
-        
-        Request: {"name": "list_create", "parameters": {"name": "work-tasks", "title": "Q1 Work Tasks", "list_type": "todo", "description": "Quarterly objectives and tasks", "tags": ["work", "q1-2025"]}}
-        Response: {"success": true, "name": "work-tasks", "metadata": {"title": "Q1 Work Tasks", "type": "todo", "created": "2024-01-01T10:00:00Z"}}
-        
+
+        Request: {"name": "list_create", "parameters": {"name": "work-tasks", "title": "Q1 Work Tasks", "list_type": "todo", "description": "Quarterly objectives and tasks", "tags": ["work", "q1-2025"], "properties": {"project_id": "proj-123"}}}
+        Response: {"success": true, "name": "work-tasks", "metadata": {"title": "Q1 Work Tasks", "type": "todo", "created": "2024-01-01T10:00:00Z", "properties": {"project_id": "proj-123"}}}
+
         Request: {"name": "list_create", "parameters": {"name": "groceries", "title": "Weekly Groceries", "list_type": "shopping", "tags": ["weekly", "essentials"]}}
         Response: {"success": true, "name": "groceries", "metadata": {"title": "Weekly Groceries", "type": "shopping", "created": "2024-01-01T10:30:00Z"}}
         """
@@ -46,7 +47,8 @@ def create_list_tools(mcp: FastMCP, list_manager: ListManager) -> None:
             title=title,
             list_type=list_type,
             description=description,
-            tags=tags
+            tags=tags,
+            properties=properties
         )
     
     @mcp.tool()
@@ -139,44 +141,47 @@ def create_list_tools(mcp: FastMCP, list_manager: ListManager) -> None:
         item_text: Optional[str] = None,
         item_index: Optional[int] = None,
         status: Optional[str] = None,
-        tags: Optional[List[str]] = None
+        tags: Optional[List[str]] = None,
+        properties: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Modify list items by adding, updating, or removing them.
-        
+
         This flexible tool handles all item operations within a list. Add new tasks,
-        update existing items (change text, status, or tags), mark items as done,
+        update existing items (change text, status, tags, or properties), mark items as done,
         or remove completed items. Perfect for managing dynamic lists.
-        
+
         Examples:
-        
-        Request: {"name": "list_modify", "parameters": {"list_name": "work-tasks", "action": "add", "item_text": "Review Q1 report", "status": "TODO", "tags": ["urgent", "reports"]}}
-        Response: {"success": true, "action": "add", "item": {"index": 3, "text": "Review Q1 report", "status": "TODO", "tags": ["urgent", "reports"]}}
-        
-        Request: {"name": "list_modify", "parameters": {"list_name": "work-tasks", "action": "update", "item_index": 2, "status": "DONE"}}
-        Response: {"success": true, "action": "update", "item": {"index": 2, "text": "Complete project setup", "status": "DONE"}}
+
+        Request: {"name": "list_modify", "parameters": {"list_name": "work-tasks", "action": "add", "item_text": "Review Q1 report", "status": "TODO", "tags": ["urgent", "reports"], "properties": {"priority": 1, "assignee": "john"}}}
+        Response: {"success": true, "action": "add", "item": {"index": 3, "text": "Review Q1 report", "status": "TODO", "tags": ["urgent", "reports"], "properties": {"priority": 1, "assignee": "john"}}}
+
+        Request: {"name": "list_modify", "parameters": {"list_name": "work-tasks", "action": "update", "item_index": 2, "status": "DONE", "properties": {"completed_by": "alice"}}}
+        Response: {"success": true, "action": "update", "item": {"index": 2, "text": "Complete project setup", "status": "DONE", "properties": {"priority": 2, "completed_by": "alice"}}}
         """
         try:
             if action == "add":
                 if not item_text:
                     return {"success": False, "error": "item_text is required for add action"}
-                
+
                 return await list_manager.add_item(
                     list_name=list_name,
                     item_text=item_text,
                     status=status or "TODO",
-                    tags=tags
+                    tags=tags,
+                    properties=properties
                 )
-            
+
             elif action == "update":
                 if item_index is None:
                     return {"success": False, "error": "item_index is required for update action"}
-                
+
                 return await list_manager.update_item(
                     list_name=list_name,
                     item_index=item_index,
                     new_text=item_text,
                     new_status=status,
-                    new_tags=tags
+                    new_tags=tags,
+                    new_properties=properties
                 )
             
             elif action == "remove":
@@ -212,7 +217,41 @@ def create_list_tools(mcp: FastMCP, list_manager: ListManager) -> None:
         Response: {"success": true, "name": "completed-project-tasks", "items_count": 12, "archived": true}
         """
         return await list_manager.delete_list(name)
-    
+
+    @mcp.tool()
+    async def list_update(
+        name: str,
+        title: Optional[str] = None,
+        list_type: Optional[str] = None,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        author: Optional[str] = None,
+        properties: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Update list properties and metadata.
+
+        This tool modifies list-level attributes like title, description, tags, type,
+        author, and custom properties. Properties use merge semantics - only provided
+        keys are updated, existing keys are preserved.
+
+        Examples:
+
+        Request: {"name": "list_update", "parameters": {"name": "work-tasks", "description": "Updated description", "properties": {"project_id": "proj-456"}}}
+        Response: {"success": true, "name": "work-tasks", "metadata": {"title": "Work Tasks", "description": "Updated description", "properties": {"project_id": "proj-456"}}}
+
+        Request: {"name": "list_update", "parameters": {"name": "shopping", "tags": ["weekly", "groceries"], "properties": {"budget": 200}}}
+        Response: {"success": true, "name": "shopping", "metadata": {"tags": ["weekly", "groceries"], "properties": {"budget": 200}}}
+        """
+        return await list_manager.update_list(
+            list_name=name,
+            new_title=title,
+            new_type=list_type,
+            new_description=description,
+            new_tags=tags,
+            new_author=author,
+            new_properties=properties
+        )
+
     @mcp.tool()
     async def list_search(
         query: str,
