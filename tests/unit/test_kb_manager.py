@@ -632,7 +632,10 @@ async def test_list_documents(kb_manager):
     # Test recursive listing (default)
     result = await kb_manager.list_documents()
     mock_doc_store.find_documents_recursive.assert_called_once()
-    assert result == ["ns/coll/doc1", "ns/coll/doc2"]
+    assert result == [
+        {"uri": "kb://ns/coll/doc1"},
+        {"uri": "kb://ns/coll/doc2"},
+    ]
     
     # Reset mocks
     mock_doc_store.reset_mock()
@@ -640,7 +643,7 @@ async def test_list_documents(kb_manager):
     # Test shallow listing
     result = await kb_manager.list_documents(recursive=False)
     mock_doc_store.find_documents_shallow.assert_called_once()
-    assert result == ["ns/coll/doc1"]
+    assert result == [{"uri": "kb://ns/coll/doc1"}]
 
 @pytest.mark.asyncio
 async def test_move_document(kb_manager, sample_components, sample_index_obj):

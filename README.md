@@ -309,6 +309,7 @@ Scrapes a specific URL and returns the content.
 - **Parameters**:
   - `url` (string, required): The URL to scrape
   - `selector` (string, optional): CSS selector to target specific content
+  - `output_format` (string, optional): Use `"markdown"` to return Markdown (preserves links). Default is plain text.
 - **Returns**:
   - `content` (string): Scraped content
   - `url` (string): The URL that was scraped
@@ -319,6 +320,18 @@ Scrapes a specific URL and returns the content.
 ```json
 {
   "content": "This is the content of the web page...",
+  "url": "https://example.com/page",
+  "title": "Example Page",
+  "success": true,
+  "error": null
+}
+```
+
+Markdown output example:
+
+```json
+{
+  "content": "This is a [link](https://example.com) in Markdown...",
   "url": "https://example.com/page",
   "title": "Example Page",
   "success": true,

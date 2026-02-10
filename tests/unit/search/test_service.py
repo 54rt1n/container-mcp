@@ -54,7 +54,7 @@ class TestSearchService:
         service = service_with_mocks
         
         # Mock the extracted methods
-        service._get_candidate_urns = AsyncMock(return_value=({"urn:doc1", "urn:doc2"}, {"urn:doc1": 0.9}))
+        service._get_candidate_uris = AsyncMock(return_value=({"urn:doc1", "urn:doc2"}, {"urn:doc1": 0.9}))
         service._fetch_content_for_candidates = AsyncMock(return_value=(
             [{"urn": "urn:doc1", "content": "content1"}], 
             [{"urn": "urn:doc2", "error": "no content"}]
@@ -66,7 +66,7 @@ class TestSearchService:
         result = await service.search(query="test", top_k_rerank=10)
         
         # Verify orchestration flow from KBM.search()
-        service._get_candidate_urns.assert_called_once()
+        service._get_candidate_uris.assert_called_once()
         service._fetch_content_for_candidates.assert_called_once()
         service._prepare_final_results.assert_called_once()
         

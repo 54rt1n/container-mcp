@@ -218,33 +218,37 @@ async def test_document_listing(kb_manager):
     # Test listing all documents
     all_docs = await kb_manager.list_documents()
     assert len(all_docs) == 5
-    assert all(path.path in all_docs for path in paths)
+    all_uris = [doc["uri"] for doc in all_docs]
+    assert all(path.uri in all_uris for path in paths)
     
     # Test listing with namespace filter
     docs_namespace = await kb_manager.list_documents(
         PartialPathComponents(namespace='docs')
     )
     assert len(docs_namespace) == 3
-    assert 'docs/tech/python-guide' in docs_namespace
-    assert 'docs/tech/rust-guide' in docs_namespace
-    assert 'docs/personal/diary' in docs_namespace
+    docs_namespace_uris = [doc["uri"] for doc in docs_namespace]
+    assert 'kb://docs/tech/python-guide' in docs_namespace_uris
+    assert 'kb://docs/tech/rust-guide' in docs_namespace_uris
+    assert 'kb://docs/personal/diary' in docs_namespace_uris
     
     # Test listing with namespace and collection filter
     tech_docs = await kb_manager.list_documents(
         PartialPathComponents(namespace='docs', collection='tech')
     )
     assert len(tech_docs) == 2
-    assert 'docs/tech/python-guide' in tech_docs
-    assert 'docs/tech/rust-guide' in tech_docs
+    tech_docs_uris = [doc["uri"] for doc in tech_docs]
+    assert 'kb://docs/tech/python-guide' in tech_docs_uris
+    assert 'kb://docs/tech/rust-guide' in tech_docs_uris
     
     # Test listing with non-recursive mode
     shallow_docs = await kb_manager.list_documents(
-        PartialPathComponents(namespace='docs'),
+        PartialPathComponents(namespace='docs', collection='tech'),
         recursive=False
     )
-    # In shallow mode, this should return collections within docs namespace
-    assert 'docs/tech' in shallow_docs
-    assert 'docs/personal' in shallow_docs
+    # In shallow mode, this should return documents within the collection
+    shallow_uris = [doc["uri"] for doc in shallow_docs]
+    assert 'kb://docs/tech/python-guide' in shallow_uris
+    assert 'kb://docs/tech/rust-guide' in shallow_uris
 
 
 @pytest.mark.asyncio

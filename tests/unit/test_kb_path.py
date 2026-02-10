@@ -213,7 +213,7 @@ def test_path_property(path_input, expected_path_prop):
     comp = PartialPathComponents.parse_path(path_input)
     assert comp.path == expected_path_prop
 
-@pytest.mark.parametrize("path_input, expected_urn_prop", [
+@pytest.mark.parametrize("path_input, expected_uri_prop", [
     # Using PathComponents to test default scheme + reconstruction
     ("ns/coll/name", "kb://ns/coll/name"),
     ("ns/coll/name.txt", "kb://ns/coll/name.txt"),

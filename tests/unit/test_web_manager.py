@@ -97,7 +97,7 @@ async def test_scrape_webpage(mock_client_session, web_manager):
     <html>
         <head><title>Test Page</title></head>
         <body>
-            <div class="content">Test Content</div>
+            <div class="content">Test Content <a href="https://example.com/link">Link</a></div>
             <div class="sidebar">Sidebar Content</div>
         </body>
     </html>
@@ -130,6 +130,16 @@ async def test_scrape_webpage(mock_client_session, web_manager):
     assert result.success is True
     assert "Test Content" in result.content
     assert result.title == "Test Page"
+
+    # Test scraping with markdown output
+    result = await web_manager.scrape_webpage(
+        "https://example.com/test",
+        selector=".content",
+        output_format="markdown",
+        session=mock_session,
+    )
+    assert result.success is True
+    assert "[Link](https://example.com/link)" in result.content
     
     # Test with failing request
     # Simulate an exception during the request
@@ -149,7 +159,7 @@ async def test_scrape_webpage_contract(web_manager):
     # Replace the real method with a mock that returns expected results
     original_method = web_manager.scrape_webpage
     
-    async def mock_scrape_webpage(url, selector=None, timeout=None, session=None):
+    async def mock_scrape_webpage(url, selector=None, output_format=None, timeout=None, session=None):
         # Just validate that URL is a string
         assert isinstance(url, str)
         # Session can be None or an object

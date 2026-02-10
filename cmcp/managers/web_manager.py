@@ -428,12 +428,20 @@ class WebManager:
                 "error": f"An unexpected error occurred during search: {e}"
             }
 
-    async def scrape_webpage(self, url: str, selector: Optional[str] = None, timeout: Optional[int] = None, session: Optional[aiohttp.ClientSession] = None) -> WebResult:
+    async def scrape_webpage(
+        self,
+        url: str,
+        selector: Optional[str] = None,
+        output_format: Optional[str] = None,
+        timeout: Optional[int] = None,
+        session: Optional[aiohttp.ClientSession] = None,
+    ) -> WebResult:
         """Scrape basic textual content from a webpage using aiohttp and BeautifulSoup.
         
         Args:
             url: URL to scrape
             selector: Optional CSS selector to extract specific content
+            output_format: Optional output format ("text" or "markdown")
             timeout: Optional timeout in seconds
             session: Optional existing aiohttp ClientSession to use
             
@@ -448,7 +456,7 @@ class WebManager:
                 content="",
                 url=url,
                 success=False,
-                error="Dependency missing: BeautifulSoup4 not installed."
+                error="Dependency missing: BeautifulSoup4 not installed.",
             )
         
         # Fetch HTML content
@@ -468,12 +476,43 @@ class WebManager:
             html_content = response["html"]
             final_url = response["url"]
             
-            soup = BeautifulSoup(html_content, 'html.parser')
+            output_format = (output_format or "text").lower()
+            if output_format not in {"text", "markdown", "md"}:
+                return WebResult(
+                    content="",
+                    url=final_url,
+                    success=False,
+                    error=f"Unsupported output_format: {output_format}. Use 'text' or 'markdown'."
+                )
+
+            use_markdown = output_format in {"markdown", "md"}
+            markdownify_fn = None
+            if use_markdown:
+                try:
+                    from markdownify import markdownify as markdownify_fn
+                except ImportError:
+                    logger.error("markdownify is not installed. Please install it (`pip install markdownify`) to use markdown output.")
+                    return WebResult(
+                        content="",
+                        url=final_url,
+                        success=False,
+                        error="Dependency missing: markdownify not installed.",
+                    )
+
+            soup = BeautifulSoup(html_content, "html.parser")
             title = soup.title.string.strip() if soup.title else None
             
             if selector:
                 elements = soup.select(selector)
-                content = "\n".join(el.get_text(strip=True) for el in elements) if elements else ""
+                if use_markdown:
+                    content_html = "".join(str(el) for el in elements) if elements else ""
+                    content = markdownify_fn(
+                        content_html,
+                        heading_style="ATX",
+                        strip=["script", "style", "header", "footer", "nav", "aside", "form", "noscript"],
+                    ).strip() if content_html else ""
+                else:
+                    content = "\n".join(el.get_text(strip=True) for el in elements) if elements else ""
                 if not content:
                     logger.warning(f"No elements found for selector '{selector}' at {final_url}")
             else:
@@ -481,11 +520,19 @@ class WebManager:
                 for element in soup(["script", "style", "header", "footer", "nav", "aside", "form", "noscript", "figure", "img"]):
                     element.extract()
                 main = soup.find('main') or soup.find('article') or soup.find('div', role='main') or soup.body
-                content = main.get_text(separator="\n", strip=True) if main else ""
-                # Further cleanup
-                lines = (line.strip() for line in content.splitlines())
-                chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-                content = '\n'.join(chunk for chunk in chunks if chunk)
+                if use_markdown:
+                    content_html = str(main) if main else ""
+                    content = markdownify_fn(
+                        content_html,
+                        heading_style="ATX",
+                        strip=["script", "style", "header", "footer", "nav", "aside", "form", "noscript"],
+                    ).strip() if content_html else ""
+                else:
+                    content = main.get_text(separator="\n", strip=True) if main else ""
+                    # Further cleanup
+                    lines = (line.strip() for line in content.splitlines())
+                    chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+                    content = "\n".join(chunk for chunk in chunks if chunk)
             
             logger.info(f"Successfully scraped text content from: {final_url}")
             return WebResult(

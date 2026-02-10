@@ -35,11 +35,16 @@ def create_web_tools(mcp: FastMCP, web_manager: WebManager) -> None:
         return await web_manager.search_web(query)
     
     @mcp.tool()
-    async def web_scrape(url: str, selector: Optional[str] = None) -> Dict[str, Any]:
+    async def web_scrape(
+        url: str,
+        selector: Optional[str] = None,
+        output_format: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Extract content from a specific webpage.
         
         This tool fetches and extracts content from any accessible webpage. 
         Optionally use CSS selectors to target specific elements on the page.
+        Use output_format="markdown" to preserve links in Markdown format.
         Returns the page content, title, and metadata.
         
         Examples:
@@ -49,8 +54,15 @@ def create_web_tools(mcp: FastMCP, web_manager: WebManager) -> None:
         
         Request: {"name": "web_scrape", "parameters": {"url": "https://news.site.com", "selector": ".article-content"}}
         Response: {"content": "Only article content...", "title": "News Site", "url": "https://news.site.com", "success": true}
+
+        Request: {"name": "web_scrape", "parameters": {"url": "https://example.com/article", "output_format": "markdown"}}
+        Response: {"content": "Article with [links](https://example.com)...", "title": "Article Title", "url": "https://example.com/article", "success": true}
         """
-        result: WebResult = await web_manager.scrape_webpage(url, selector)
+        result: WebResult = await web_manager.scrape_webpage(
+            url,
+            selector=selector,
+            output_format=output_format,
+        )
         return {
             "content": result.content,
             "url": result.url,
