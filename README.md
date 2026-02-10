@@ -329,6 +329,8 @@ Scrapes a specific URL and returns the content.
 #### `web_browse`
 Interactively browses a website using Playwright.
 
+Note: `web_browse` requires Playwright browser binaries. Outside the container, install them with `python -m playwright install chromium` (or `playwright install`).
+
 - **Parameters**:
   - `url` (string, required): Starting URL for browsing session
 - **Returns**:

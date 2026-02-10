@@ -1,13 +1,35 @@
 #!/bin/bash
 
 # Test Network Connectivity to Container-MCP SSE Endpoint
-# Tests if the 8080/sse endpoint is responding properly
+# Tests if the configured endpoint is responding properly
 
 set -e
 
 # Configuration
 HOST="${HOST:-localhost}"
-PORT="${PORT:-8000}"
+
+# If PORT isn't explicitly set, try to read MCP_PORT from config files
+if [ -z "${PORT+x}" ]; then
+    CONFIG_FILE=""
+    if [ -f "volume/config/app.env" ]; then
+        CONFIG_FILE="volume/config/app.env"
+    elif [ -f "volume/config/default.env" ]; then
+        CONFIG_FILE="volume/config/default.env"
+    fi
+
+    if [ -n "$CONFIG_FILE" ]; then
+        CONFIG_PORT=$(grep "^MCP_PORT=" "$CONFIG_FILE" | tail -n1 | cut -d'=' -f2)
+        if [ -n "$CONFIG_PORT" ]; then
+            PORT="$CONFIG_PORT"
+        else
+            PORT="8000"
+        fi
+    else
+        PORT="8000"
+    fi
+else
+    PORT="$PORT"
+fi
 HEALTH_ENDPOINT="/health"
 TIMEOUT="${TIMEOUT:-10}"
 
@@ -158,7 +180,7 @@ echo "Test Results:"
 echo "============="
 echo "Passed: $test_passed/$test_total"
 
-python scripts/list_tools.py
+python scripts/list_tools.py --host "$HOST" --port "$PORT"
 
 if [ $test_passed -eq $test_total ]; then
     echo -e "${GREEN}✓ ALL TESTS PASSED${NC}"

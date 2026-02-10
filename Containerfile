@@ -6,7 +6,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app \
-    PATH=/app/.venv/bin:$PATH
+    PATH=/app/.venv/bin:$PATH \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -165,6 +166,11 @@ COPY pyproject.toml /app/
 # Install MCP Python SDK and other dependencies directly from pyproject.toml
 WORKDIR /app
 RUN /app/.venv/bin/uv pip install --no-cache-dir -e .
+
+# Install Playwright browsers to a shared path so the ubuntu user can run web_browse
+RUN mkdir -p /ms-playwright \
+    && /app/.venv/bin/python -m playwright install --with-deps chromium \
+    && chmod -R 755 /ms-playwright
 
 # Set appropriate permissions for the ubuntu user
 RUN chown -R ubuntu:ubuntu /app
