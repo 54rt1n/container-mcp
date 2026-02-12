@@ -13,6 +13,7 @@ services:
       - ./volume/logs:/app/logs:rw
       - ./volume/sandbox:/app/sandbox:rw
       - ./volume/kb:/app/kb:rw
+      - ./volume/lists:/app/lists:rw
       - ./volume/temp:/app/temp:rw
     env_file:
       - ${CUSTOM_ENV_FILE:-config/app.env}
