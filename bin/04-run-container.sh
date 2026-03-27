@@ -94,12 +94,13 @@ if [ "${RUN_CONTAINER}" = "true" ]; then
         --name ${CONTAINER_NAME} \
         --user $(id -u):$(id -g) \
         -p ${LISTENER_HOST}:${MCP_PORT}:8000 \
-        -v "$(pwd)/volume/config:/app/config:Z" \
-        -v "$(pwd)/volume/logs:/app/logs:Z" \
-        -v "$(pwd)/volume/data:/app/data:Z" \
-        -v "$(pwd)/volume/sandbox:/app/sandbox:Z" \
-        -v "$(pwd)/volume/temp:/app/temp:Z" \
-        -v "$(pwd)/volume/kb:/app/kb:Z" \
+        -v "$(pwd)/volume/config:/app/config:ro" \
+        -v "$(pwd)/volume/logs:/app/logs:rw" \
+        -v "$(pwd)/volume/data:/app/data:rw" \
+        -v "$(pwd)/volume/sandbox:/app/sandbox:rw" \
+        -v "$(pwd)/volume/temp:/app/temp:rw" \
+        -v "$(pwd)/volume/kb:/app/kb:rw" \
+        -v "$(pwd)/volume/lists:/app/lists:rw" \
         --security-opt apparmor:unconfined \
         --restart unless-stopped \
         --env-file ${ENV_FILE} \

@@ -79,12 +79,14 @@ ExpectedPartial = dict[str, Optional[str]]
      {"scheme": None, "namespace": "ns", "collection": "coll", "name": "name.txt", "fragment": None, "extension": None}),
     ("ns/coll/sub/name.json", # Subcollection, name includes extension
      {"scheme": None, "namespace": "ns", "collection": "coll/sub", "name": "name.json", "fragment": None, "extension": None}),
-    ("ns/name.with.dots", # Two segments, name includes dots
-     {"scheme": None, "namespace": "ns", "collection": None, "name": "name.with.dots", "fragment": None, "extension": None}),
+    ("ns/name.with.dots", # Two segments -> namespace/collection
+     {"scheme": None, "namespace": "ns", "collection": "name.with.dots", "name": None, "fragment": None, "extension": None}),
+    ("kb://research/project", # Two segments with scheme -> namespace/collection root
+     {"scheme": "kb", "namespace": "research", "collection": "project", "name": None, "fragment": None, "extension": None}),
     ("ns", # Single segment -> namespace
      {"scheme": None, "namespace": "ns", "collection": None, "name": None, "fragment": None, "extension": None}),
-    ("kb://single_name", # Single segment after scheme -> name
-     {"scheme": "kb", "namespace": None, "collection": None, "name": "single_name", "fragment": None, "extension": None}),
+    ("kb://single_name", # Single segment after scheme -> namespace root
+     {"scheme": "kb", "namespace": "single_name", "collection": None, "name": None, "fragment": None, "extension": None}),
     ("single_name.txt", # Single segment with ext -> name
      {"scheme": None, "namespace": None, "collection": None, "name": "single_name.txt", "fragment": None, "extension": None}),
 

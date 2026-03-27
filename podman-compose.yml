@@ -16,7 +16,7 @@ services:
       - ./volume/lists:/app/lists:rw
       - ./volume/temp:/app/temp:rw
     env_file:
-      - ${CUSTOM_ENV_FILE:-config/app.env}
+      - ${CUSTOM_ENV_FILE:-volume/config/app.env}
     security_opt:
       - seccomp=unconfined
       - apparmor=unconfined

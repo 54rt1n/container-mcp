@@ -281,6 +281,52 @@ async def test_document_moving(kb_manager):
 
 
 @pytest.mark.asyncio
+async def test_scheme_prefixed_namespace_root_scopes_listing(kb_manager):
+    """A root URI like kb://research should scope to that namespace only."""
+    research_paths = [
+        PathComponents.parse_path('research/project/intro'),
+        PathComponents.parse_path('research/project/findings'),
+    ]
+    other_path = PathComponents.parse_path('projects/jai-insight/overview')
+
+    for path in [*research_paths, other_path]:
+        await kb_manager.create_document(path, {'title': f'Document {path.name}'})
+
+    scoped_docs = await kb_manager.list_documents(
+        PartialPathComponents.parse_path('kb://research')
+    )
+
+    scoped_uris = {doc["uri"] for doc in scoped_docs}
+    assert scoped_uris == {
+        'kb://research/project/intro',
+        'kb://research/project/findings',
+    }
+
+
+@pytest.mark.asyncio
+async def test_scheme_prefixed_namespace_collection_scopes_listing(kb_manager):
+    """A partial URI like kb://research/nested-topic should scope to that collection only."""
+    nested_paths = [
+        PathComponents.parse_path('research/nested-topic/intro'),
+        PathComponents.parse_path('research/nested-topic/findings'),
+    ]
+    sibling_path = PathComponents.parse_path('research/other-topic/overview')
+
+    for path in [*nested_paths, sibling_path]:
+        await kb_manager.create_document(path, {'title': f'Document {path.name}'})
+
+    scoped_docs = await kb_manager.list_documents(
+        PartialPathComponents.parse_path('kb://research/nested-topic')
+    )
+
+    scoped_uris = {doc["uri"] for doc in scoped_docs}
+    assert scoped_uris == {
+        'kb://research/nested-topic/intro',
+        'kb://research/nested-topic/findings',
+    }
+
+
+@pytest.mark.asyncio
 async def test_datetime_consistency(kb_manager):
     """Test that datetime objects are properly timezone-aware throughout the system."""
     path = PathComponents.parse_path('test/datetime/document')

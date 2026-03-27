@@ -210,12 +210,13 @@ class PartialPathComponents(NamedTuple):
         
         # Handle different path lengths
         if len(parts) == 1:
-            # Single part: depends on context
+            # Single part: treat it as a namespace root for partial URIs.
+            # This keeps scheme-prefixed roots like "kb://research" aligned
+            # with unprefixed roots like "research" when browsing/listing.
             if scheme:
-                # With scheme: single part is treated as name (e.g., "kb://single_name")
-                namespace = None
+                namespace = parts[0]
                 collection = None
-                name = parts[0]
+                name = None
             else:
                 # Without scheme: single part could be namespace (e.g., "ns") or name (e.g., "single_name.txt")
                 # If it contains a dot, it's likely a name; otherwise it's a namespace
@@ -228,9 +229,10 @@ class PartialPathComponents(NamedTuple):
                     collection = None
                     name = None
         elif len(parts) == 2:
-            # Two parts: namespace/name (not namespace/collection)
-            namespace, name = parts
-            collection = None
+            # Two parts: treat as a partial namespace/collection path.
+            # Full document paths already require namespace/collection/name.
+            namespace, collection = parts
+            name = None
         else:
             # Three or more parts: namespace/collection[/subcollection]*/name
             namespace = parts[0]

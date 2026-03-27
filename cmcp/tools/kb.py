@@ -159,13 +159,23 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
             
             # Bulk read mode - fetch content/index for each document
             processed_docs = []
-            for doc_path in documents:
+            for document in documents:
+                doc_path = document
                 try:
+                    if isinstance(document, dict):
+                        if "uri" not in document:
+                            raise ValueError("Document is missing uri")
+                        doc_path = document["uri"]
+                        doc_data = dict(document)
+                    else:
+                        doc_path = document
+                        doc_data = {"uri": doc_path}
+
                     components = PathComponents.parse_path(doc_path)
-                    doc_data = {"uri": components.uri}
+                    doc_data["uri"] = components.uri
                     
                     # Read index if requested
-                    if include_index:
+                    if include_index and "index" not in doc_data:
                         try:
                             index = await kb_manager.read_index(components)
                             doc_data["index"] = index.model_dump()
@@ -173,9 +183,11 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                             doc_data["index_error"] = "Index not found"
                         except Exception as e:
                             doc_data["index_error"] = str(e)
+                    elif include_index and hasattr(doc_data["index"], "model_dump"):
+                        doc_data["index"] = doc_data["index"].model_dump()
                     
                     # Read content if requested
-                    if include_content:
+                    if include_content and "content" not in doc_data:
                         try:
                             content = await kb_manager.read_content(components)
                             doc_data["content"] = content
@@ -203,7 +215,11 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
         try:
             # If no path provided, list all documents
             if not uri:
-                documents = await kb_manager.list_documents(recursive=recursive)
+                documents = await kb_manager.list_documents(
+                    recursive=recursive,
+                    include_content=include_content,
+                    include_index=include_index
+                )
                 return await _process_document_list(documents, include_content, include_index)
             
             # Parse the path to determine what we're dealing with
@@ -259,7 +275,9 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                     partial_components = PartialPathComponents.parse_path(uri)
                     documents = await kb_manager.list_documents(
                         components=partial_components,
-                        recursive=recursive
+                        recursive=recursive,
+                        include_content=include_content,
+                        include_index=include_index
                     )
                     return await _process_document_list(documents, include_content, include_index)
                     
@@ -268,7 +286,9 @@ def create_kb_tools(mcp: FastMCP, kb_manager: KnowledgeBaseManager) -> None:
                 partial_components = PartialPathComponents.parse_path(uri)
                 documents = await kb_manager.list_documents(
                     components=partial_components,
-                    recursive=recursive
+                    recursive=recursive,
+                    include_content=include_content,
+                    include_index=include_index
                 )
                 return await _process_document_list(documents, include_content, include_index)
                 
